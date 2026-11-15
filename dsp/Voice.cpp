@@ -65,7 +65,6 @@ void Voice::prepare (double sampleRate, uint32_t noiseSeed)
     outDc.setup (fs, 10.0f);
     energyCoef = (float) (1.0 / (0.005 * fs));
     memCoef = (float) (1.0 / (0.02 * fs));
-    memHp.setup (fs, 400.0f);
     noise.seed (noiseSeed);
     reset();
 }
@@ -507,10 +506,18 @@ void Voice::updateControl (const Params& p, const VoiceMod& mod, int chunk)
     // rattles along with the air column rather than changing the bore.
     const bool stringBuzz = exciter == Exciter::Pluck || exciter == Exciter::Bow;
     buzzLevel    = stringBuzz && p.buzz > 0.001f ? 0.3f * std::exp (-4.5f * clampf (p.buzz, 0.0f, 1.0f)) : 1e9f;
-    buzzDepth    = 120.0f;                                // samples of shortening per unit of excess
-    membrane     = stringBuzz ? 0.0f : clampf (p.buzz, 0.0f, 1.0f);
-    memThreshold = 1.4f - 1.1f * membrane;                // relative to the note's RMS
-    memMakeup    = 1.0f / (1.0f + 0.9f * membrane);       // the slaps add energy: keep the level
+    buzzDepth    = 40.0f;                                 // samples of shortening per unit of excess
+    // The contact's length modulation is lively but chaotic note to note, so strings also
+    // get a deterministic bridge rattle on the output above a FIXED level: loud notes
+    // rattle, and the rattle fades as the note decays (the jawari sweep).
+    membrane     = clampf (p.buzz, 0.0f, 1.0f);
+    memAbsolute  = stringBuzz;
+    memThreshold = stringBuzz ? 0.12f * std::exp (-3.0f * membrane)   // absolute level
+                              : 1.4f - 1.1f * membrane;               // relative to the note's RMS
+    memMakeup    = 1.0f / (1.0f + (stringBuzz ? 2.5f : 0.9f) * membrane);   // the slaps add energy: keep the level
+    // a string's slap against the bridge is sharp: keep only its edges (high-passed)
+    memGain      = stringBuzz ? 10.0f : 4.0f;
+    memHp.setup (fs, stringBuzz ? 1500.0f : 400.0f);
     buzzMaxShift = std::max (0.0f, 0.12f * period - 1.0f);
     buzzAvgCoef  = 1.0f / (4.0f * period);                // average over ~4 periods
     // blown exciters pull the pitch back by themselves: they need only half the add-back
@@ -734,8 +741,8 @@ void Voice::render (float* out, int numSamples, const Params& p, const VoiceMod&
                 // note's own loudness: one-sided spikes, high-passed, added to the sound
                 const float x = tmp[i];
                 memRms += (x * x - memRms) * memCoef;
-                const float over = std::max (0.0f, x - std::sqrt (memRms) * memThreshold);
-                tmp[i] = (x + membrane * 4.0f * memHp.process (over)) * memMakeup;
+                const float over = std::max (0.0f, x - (memAbsolute ? memThreshold : std::sqrt (memRms) * memThreshold));
+                tmp[i] = (x + membrane * memGain * memHp.process (over)) * memMakeup;
             }
 
         float peak = 0.0f, sumSq = 0.0f;
