@@ -1,0 +1,54 @@
+name: Build
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  windows:
+    name: Windows VST3
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure
+        run: cmake -B build -A x64
+
+      - name: Build
+        run: cmake --build build --config Release --parallel --target Filament_VST3 Filament_Standalone filament_render_test
+
+      - name: DSP tests
+        run: ctest --test-dir build -C Release --output-on-failure
+
+      - name: Collect
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist | Out-Null
+          Copy-Item -Recurse build/Filament_artefacts/Release/VST3/Filament.vst3 dist/
+          Copy-Item build/Filament_artefacts/Release/Standalone/Filament.exe dist/
+          Copy-Item README.md dist/
+
+      - name: Upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: Filament-Windows-x64
+          path: dist/
+
+  dsp-tests:
+    name: DSP tests + demo audio (Linux)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build and test DSP engine
+        run: |
+          cmake -B build -DCMAKE_BUILD_TYPE=Release -DFILAMENT_BUILD_PLUGIN=OFF
+          cmake --build build --parallel
+          ctest --test-dir build --output-on-failure -V
+
+      - name: Upload demo audio
+        uses: actions/upload-artifact@v4
+        with:
+          name: Filament-demo-audio
+          path: build/demo_*.wav
