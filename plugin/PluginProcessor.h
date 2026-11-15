@@ -75,6 +75,8 @@ private:
         std::atomic<float>* wheelVib {};
         std::atomic<float>* exprCurve {};
         std::atomic<float>* growl {};
+        std::atomic<float>* atStrange {};
+        std::atomic<float>* strange {};
         std::atomic<float>* bodyMix {};
         std::atomic<float>* bodySize {};
         std::atomic<float>* level {};

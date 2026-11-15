@@ -71,6 +71,10 @@ struct Params
     float wheelToVibrato = 1.0f; // 0..1
     float exprCurve      = 0.0f; // -1..1: response curve (positive = more sensitive)
     float growl          = 0.0f; // 0..1: throat growl on sustained exciters
+    float atToStrange    = 0.0f; // 0..1: how far aftertouch / breath CC pushes Strange
+
+    // The strange knob: 0 = realistic ... 1 = inharmonic / chaotic
+    float strange        = 0.0f;
 
     // Body / output
     float bodyMix     = 0.4f;   // 0..1

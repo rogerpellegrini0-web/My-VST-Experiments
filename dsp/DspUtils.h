@@ -3,6 +3,7 @@
 #pragma once
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <complex>
 #include <cstdint>
@@ -185,6 +186,70 @@ struct BandPass
         s2 = b2 * x - a2 * y;
         return y;
     }
+};
+
+// Second-order allpass  H(z) = (a2 + a1 z^-1 + z^-2) / (1 + a1 z^-1 + a2 z^-2), with poles at
+// radius r and angle theta. Lossless; delays frequencies near theta much more than others.
+struct Allpass2
+{
+    float a1 = 0.0f, a2 = 0.0f;
+    float x1 = 0.0f, x2 = 0.0f, y1 = 0.0f, y2 = 0.0f;
+    void set (float r, float theta) noexcept { a1 = -2.0f * r * std::cos (theta); a2 = r * r; }
+    void reset() noexcept { x1 = x2 = y1 = y2 = 0.0f; }
+    float process (float x) noexcept
+    {
+        const float y = a2 * x + a1 * x1 + x2 - a1 * y1 - a2 * y2;
+        x2 = x1; x1 = x; y2 = y1; y1 = y;
+        return y;
+    }
+    static float phaseDelay (float a1, float a2, float w) noexcept
+    {
+        const std::complex<float> z1 = std::polar (1.0f, -w), z2 = z1 * z1;
+        const std::complex<float> H = (a2 + a1 * z1 + z2) / (1.0f + a1 * z1 + a2 * z2);
+        float ph = -std::arg (H);
+        while (ph < 0.0f) ph += kTwoPi;
+        return ph / w;
+    }
+};
+
+// Cheap smooth saturator ~ tanh(x) for |x| < 3, clamped beyond.
+inline float fastTanh (float x) noexcept
+{
+    x = clampf (x, -3.0f, 3.0f);
+    const float x2 = x * x;
+    return x * (27.0f + x2) / (27.0f + 9.0f * x2);
+}
+
+// Wideband 90-degree phase splitter (two polyphase allpass chains, coefficients by
+// Olli Niemitalo). Outputs i and q are in quadrature from ~20 Hz to ~0.98 * Nyquist.
+class Hilbert
+{
+public:
+    void reset() noexcept { for (auto& st : state) st = {}; q1 = 0.0f; }
+    void process (float x, float& i, float& q) noexcept
+    {
+        static constexpr float kA[4] = { 0.6923878f * 0.6923878f, 0.9360654322959f * 0.9360654322959f,
+                                         0.9882295226860f * 0.9882295226860f, 0.9987488452737f * 0.9987488452737f };
+        static constexpr float kB[4] = { 0.4021921162426f * 0.4021921162426f, 0.8561710882420f * 0.8561710882420f,
+                                         0.9722909545651f * 0.9722909545651f, 0.9952884791278f * 0.9952884791278f };
+        float a = x, b = x;
+        for (int k = 0; k < 4; ++k) a = section (state[(size_t) k],     kA[k], a);
+        for (int k = 0; k < 4; ++k) b = section (state[(size_t) k + 4], kB[k], b);
+        i = a;
+        q = q1;     // the second path carries one extra sample of delay
+        q1 = b;
+    }
+
+private:
+    struct Section { float x1 = 0, x2 = 0, y1 = 0, y2 = 0; };
+    static float section (Section& s, float c, float x) noexcept
+    {
+        const float y = c * (x + s.y2) - s.x2;
+        s.x2 = s.x1; s.x1 = x; s.y2 = s.y1; s.y1 = y;
+        return y;
+    }
+    std::array<Section, 8> state {};
+    float q1 = 0.0f;
 };
 
 } // namespace filament

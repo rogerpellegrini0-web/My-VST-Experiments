@@ -16,6 +16,7 @@ struct VoiceMod
     float bendSemis  = 0.0f;
     float wheel      = 0.0f;   // 0..1
     float expression = 1.0f;   // drive multiplier from aftertouch / breath / wheel (0..1)
+    float strangeAdd = 0.0f;   // extra Strange from aftertouch (0..1)
 };
 
 // One voice: an Exciter driving a Resonator through a scattering junction.
@@ -98,6 +99,7 @@ private:
     float maxDrive  = 0.0f;   // bow velocity / breath pressure target
     float drive = 0.0f, driveStep = 0.0f;       // smoothed drive incl. expression
     float expr = 1.0f;                          // smoothed expression
+    float exprAmp = 1.0f;                       // level fade-in at very light pressure
     float growl = 0.0f, growlStep = 0.0f, growlPhase = 0.0f, growlWalk = 0.0f;
     float noiseGain = 0.0f;
     float shapeA = 0.0f;      // bow slope | reed slope | jet reflection
@@ -111,6 +113,17 @@ private:
     float boreScale = 1.0f;       // pitch compensation for exciters that pull the resonance
 
     float outGain = 1.0f;
+
+    // Strange: per-voice state (see updateControl)
+    static constexpr int kNumScramblers = 3;
+    float strange = 0.0f;                         // smoothed effective amount
+    float scramble = 0.0f, scramblePhase = 0.0f;  // stage 2: lossless partial scrambler
+    std::array<Allpass2, kNumScramblers> scramblers;
+    DCBlocker chaosHp;                            // note-tracking high-pass in the chaos stage
+    float guardRms = 0.016f, guardGain = 1.0f;    // level guard
+    float satDrive = 1.0f, satBoost = 1.0f;       // in-loop saturation and gain
+    float tension = 0.0f, energy = 0.0f, energyCoef = 0.004f;   // amplitude-dependent pitch
+    float strangePush = 1.0f;                     // exciter overdrive
 
     // modulation
     float vibPhase = 0.0f;

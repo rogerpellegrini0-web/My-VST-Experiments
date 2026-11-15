@@ -58,11 +58,34 @@ All pairings share these stages:
 - **Growl:** an irregular 25–40 Hz throat flutter on the breath or bow, from a subtle
   edge to a full growl.
 
+- **AT → Strange:** how far key pressure pushes the Strange amount (see below), so
+  digging into a note can make it break up or scream.
+
 Driving a model harder doesn't just make it louder. It changes the physics: brass
 gets brassier, reeds buzz, the bow digs in, and past a point reeds choke and
 flutes overblow, as the real instruments do.
 
 Other MIDI: pitch bend (range adjustable) and the sustain pedal.
+
+## The Strange knob
+
+One knob that takes any model from realistic to inharmonic and chaotic. It does this
+by bending the physics, not by adding an effect afterwards, so a strange sound still
+responds to velocity, pressure, legato and pitch bend.
+
+| Strange | What changes in the model | What you hear |
+|---|---|---|
+| 0 % | nothing | the realistic instrument |
+| ~5–45 % | extra stiffness: the loop's dispersion pulls the partials apart | piano-like stretch, then bell / gong partials |
+| ~30–75 % | lossless "partial scrambler": resonant allpasses tuned to bell/plate mode ratios (2.76, 5.40, 8.93 x the note), slowly wobbling | clangy, metallic, shimmering inharmonic tones |
+| ~65–100 % | strings and reeds: saturation and extra gain in the loop (self-sustaining while held). Lips: over-blow up the horn's modes. All: pitch that rises with loudness (tension modulation) and an over-driven exciter | drones, buzz, growls, multiphonics, screams |
+
+The fundamental stays in tune through the first stages, a level guard keeps the
+loudness roughly steady as the knob moves, and every exciter/resonator pairing has
+been tested at every 10 % step for stability.
+
+The **Stiffness** knob uses the same dispersion: 0–10 % is clean, 30–50 % is
+piano-like, and towards 100 % it becomes bell-like.
 
 Tuning is computed rather than approximated. Each loop's length is the note's period minus
 the phase delay of every filter inside the loop. Where a nonlinear exciter pulls the pitch

@@ -33,6 +33,13 @@ namespace
         return std::pow (10.0f, -3.0f / (std::max (0.01f, t60) * f));
     }
 
+    // 0 below a, 1 above b, smooth in between.
+    float smoothRamp (float x, float a, float b) noexcept
+    {
+        const float t = clampf ((x - a) / (b - a), 0.0f, 1.0f);
+        return t * t * (3.0f - 2.0f * t);
+    }
+
     // Output level trim per [exciter][resonator], measured with the offline renderer so every
     // combination sits around -18 dBFS RMS at default settings.
     constexpr float kComboGain[kNumExciters][kNumResonators] = {
@@ -56,6 +63,7 @@ void Voice::prepare (double sampleRate, uint32_t noiseSeed)
     scratch.assign (excitation.size(), 0.0f);
     loopDc.setup (fs, 5.0f);
     outDc.setup (fs, 10.0f);
+    energyCoef = (float) (1.0 / (0.005 * fs));
     noise.seed (noiseSeed);
     reset();
 }
@@ -68,6 +76,9 @@ void Voice::reset()
     for (auto& ap : disp) ap.reset();
     loopDc.reset();
     outDc.reset();
+    chaosHp.reset();
+    for (auto& sc : scramblers) sc.reset();
+    energy = 0.0f;
     lipY1 = lipY2 = 0.0f;
     env = level = 0.0f;
     exLen = exPos = 0;
@@ -95,6 +106,7 @@ void Voice::start (int newNote, float vel, const Params& p)
     expr = 1.0f;
     drive = driveStep = 0.0f;
     growl = growlStep = growlPhase = growlWalk = 0.0f;
+    guardRms = 0.25f * 0.25f; guardGain = -1.0f;   // set on the first block
     samplesSinceStart = 0;
     vibPhase = 0.0f;
 
@@ -303,14 +315,25 @@ float Voice::setupResonator (const Params& p, float f, float w, float period)
     loopLP.p = pole;
 
     // --- dispersion (stiffness)
-    float a = -0.8f * clampf (p.stiffness, 0.0f, 1.0f);
+    // Strange (stage 1) adds stiffness on top of the knob: stretched, then bell-like partials.
+    const float stiffExtra = smoothRamp (strange, 0.05f, 0.45f);
+    const float stiff = clampf (p.stiffness, 0.0f, 1.0f);
+    const float stiffAmt = stiff + (1.0f - stiff) * stiffExtra;
+    // The allpasses' dispersion corner sits a few times above the fundamental (lower for
+    // stiffer strings), so the low partials that the ear follows get stretched apart:
+    // piano-like at ~30-50 %, bell-like towards 100 %. Scaled in gently at low settings.
+    const float fc = f * std::exp2 (lerpf (5.0f, 1.0f, stiffAmt));
+    float a = -(1.0f - std::min (0.9f, kTwoPi * fc / (float) fs)) * std::min (1.0f, stiffAmt * 4.0f);
     auto filterDelay = [&] (float coef)
     {
         return OnePoleLP::phaseDelay (pole, w) + (float) kNumAllpass * Allpass1::phaseDelay (coef, w);
     };
     float pd = filterDelay (a);
-    while (pd > 0.3f * period && a < -0.001f) { a *= 0.7f; pd = filterDelay (a); }
+    while (pd > 0.45f * period && a < -0.001f) { a = -(1.0f - (1.0f + a) * 1.3f); pd = filterDelay (a); }
     for (auto& ap : disp) ap.a = a;
+    if (scramble > 0.0f)
+        for (auto& sc : scramblers)
+            pd += Allpass2::phaseDelay (sc.a1, sc.a2, w);
 
     // --- loop lengths
     float targetA = 2.0f, targetB = 2.0f;
@@ -372,6 +395,13 @@ void Voice::updateControl (const Params& p, const VoiceMod& mod, int chunk)
 {
     const float t = (float) ((double) samplesSinceStart / fs);
 
+    // --- Strange: effective amount (knob + aftertouch), smoothed so knob moves are clean
+    {
+        const float target = clampf (p.strange + mod.strangeAdd * (1.0f - p.strange), 0.0f, 1.0f);
+        strange = firstControl ? target
+                               : strange + (target - strange) * (1.0f - std::exp (-(float) chunk / (0.02f * (float) fs)));
+    }
+
     // Glide (portamento) towards the target note: exponential, ~95% after `glide` seconds.
     if (pitch != (float) note)
     {
@@ -417,6 +447,9 @@ void Voice::updateControl (const Params& p, const VoiceMod& mod, int chunk)
                           + 5.0f * clampf (std::log2 (440.0f / f) * 0.5f, 0.0f, 1.0f)
                           + kResonatorOffset[(int) resonator];
         boreScale = std::exp2 (cents / 1200.0f);
+        // Strange (stage 3) over-tightens the lips past the compensated range: they jump
+        // up the horn's modes like an overblown bugle.
+        lipPitchOct += 0.75f * smoothRamp (strange, 0.7f, 1.0f);
     }
     else if (exciter == Exciter::Reed && resonator == Resonator::ConicalTube)
     {
@@ -428,13 +461,56 @@ void Voice::updateControl (const Params& p, const VoiceMod& mod, int chunk)
     attackInc   = 1.0f / (float) (std::max (0.001f, p.attack) * fs);
     releaseCoef = (float) std::exp (-6.9 / (std::max (0.005f, p.release) * fs));
 
+    // --- Strange stages 2 and 3 (stage 1, extra stiffness, lives in setupResonator)
+    // 2: lossless "partial scrambler": second-order allpasses in the loop, tuned to
+    //    irrational multiples of the note (roughly bell / plate mode ratios). They push the
+    //    partials near them off the harmonic series in an irregular, metallic way without
+    //    removing energy; slowly wobbling their tuning makes the partials shimmer.
+    scramble = smoothRamp (strange, 0.3f, 0.75f);
+    scramblePhase += kTwoPi * 0.37f * (float) chunk / (float) fs;
+    if (scramblePhase > kTwoPi) scramblePhase -= kTwoPi;
+    {
+        static constexpr float kRatios[kNumScramblers] = { 2.76f, 5.40f, 8.93f };
+        const float wobble = 1.0f + 0.04f * smoothRamp (strange, 0.5f, 0.9f) * std::sin (scramblePhase);
+        for (int k = 0; k < kNumScramblers; ++k)
+        {
+            const float theta = kTwoPi * f * kRatios[k] * wobble * (k == 1 ? 1.0f / wobble : 1.0f) / (float) fs;
+            const float r = theta < 0.9f * kPi ? 0.92f * scramble : 0.0f;
+            scramblers[(size_t) k].set (r, std::min (theta, 0.9f * kPi));
+        }
+    }
+    // 3: saturation and extra gain in the loop (self-sustaining while the key is held),
+    //    pitch that rises with energy (tension modulation) and an over-driven exciter.
+    //    A note-tracking high-pass keeps the boosted loop from building up rumble.
+    //    Each exciter misbehaves in its own way: strings and reeds saturate and buzz,
+    //    lips over-blow up the horn's modes, the air jet only gets the tension wobble
+    //    (saturating or over-driving it just collapses it into hiss).
+    const float chaos = smoothRamp (strange, 0.65f, 1.0f);
+    const bool saturates = exciter == Exciter::Pluck || exciter == Exciter::Bow || exciter == Exciter::Reed;
+    satDrive    = saturates ? 1.0f + 5.0f * chaos : 1.0f;
+    satBoost    = saturates && gate ? 1.0f + 0.12f * chaos : 1.0f;
+    tension     = 0.6f * smoothRamp (strange, 0.7f, 1.0f);
+    strangePush = exciter == Exciter::Jet ? 1.0f : 1.0f + 0.7f * smoothRamp (strange, 0.75f, 1.0f);
+    if (chaos > 0.0f) chaosHp.setup (fs, 0.25f * f);
+
     setupExciter (p, f, period);
     const float targetGain = setupResonator (p, f, w, period);
 
     // Expression (aftertouch / breath / wheel) scales the drive of sustained exciters,
-    // smoothed (~8 ms) so stepped MIDI values don't zipper.
-    expr += (clampf (mod.expression, 0.0f, 1.5f) - expr) * (1.0f - std::exp (-(float) chunk / (0.008f * (float) fs)));
-    const float targetDrive = maxDrive * expr;
+    // smoothed (~8 ms) so stepped MIDI values don't zipper; a new note starts at the
+    // current pressure.
+    {
+        const float target = clampf (mod.expression, 0.0f, 1.5f);
+        expr = firstControl ? target
+                            : expr + (target - expr) * (1.0f - std::exp (-(float) chunk / (0.008f * (float) fs)));
+    }
+    // Map expression onto the exciter's useful range: from its speaking threshold up to
+    // full drive, with the level fading in over the first quarter, so light pressure is
+    // a quiet note instead of no note.
+    static constexpr float kThreshold[kNumExciters] = { 0.0f, 0.0f, 0.85f, 0.1f, 0.7f };
+    const float thr = kThreshold[(int) exciter];
+    const float targetDrive = maxDrive * (thr + (1.0f - thr) * expr) * strangePush;
+    exprAmp = clampf (expr / 0.25f, 0.0f, 1.0f);
 
     // Growl: an irregular ~25-40 Hz throat flutter on the drive.
     growlWalk = clampf (growlWalk + 0.08f * noise.next(), -1.0f, 1.0f);
@@ -541,16 +617,25 @@ void Voice::renderSamples (float* out, int n) noexcept
         dA += dAStep; dB += dBStep; loopGain += loopGainStep;
         drive += driveStep; growl += growlStep;
 
+        // Strange: tension modulation shortens the loop as the energy in it grows
+        const float shorten = 1.0f / (1.0f + tension * energy);
+
         // 1. wave arriving at the excitation point
-        const float rawFar = dlA.read (dA);
+        const float rawFar = dlA.read (dA * shorten);
         float y = loopLP.process (rawFar);
         for (auto& ap : disp) y = ap.process (y);
+
+        if (scramble > 0.0f)
+            for (auto& sc : scramblers) y = sc.process (y);
+        if (satDrive > 1.0f)
+            y = chaosHp.process (fastTanh (y * satDrive) / satDrive * satBoost);
+        energy += (y * y - energy) * energyCoef;
 
         float reflFar, reflNear = 0.0f, x;
         if (twoSegment)
         {
             reflFar  = -loopGain * y;        // bridge / bell end (lossy, inverting)
-            reflNear = -dlB.read (dB);       // nut / mouthpiece end (rigid, inverting)
+            reflNear = -dlB.read (dB * shorten);   // nut / mouthpiece end (rigid, inverting)
             x = reflFar + reflNear;
         }
         else
@@ -600,10 +685,24 @@ void Voice::render (float* out, int numSamples, const Params& p, const VoiceMod&
         float tmp[kControlBlock];
         renderSamples (tmp, chunk);
 
-        float peak = 0.0f;
+        // Strange level guard: the stages change loudness a lot (a boosted loop can be
+        // +12 dB, a choked reed -12 dB), so as Strange rises the voice is pulled ~80% of
+        // the way towards a reference level (-12 dBFS RMS per voice). At Strange 0 it does nothing.
+        const float guardAmt = 0.8f * smoothRamp (strange, 0.15f, 0.5f);
+        float guardTarget = 1.0f;
+        if (guardAmt > 0.0f)
+            guardTarget = std::pow (clampf (0.25f / std::sqrt (guardRms + 1e-12f), 0.12f, 2.0f), guardAmt);
+        guardTarget *= exprAmp;
+        if (guardGain < 0.0f) guardGain = guardTarget;
+        const float guardStep = (guardTarget - guardGain) / (float) chunk;
+
+        float peak = 0.0f, sumSq = 0.0f;
         for (int i = 0; i < chunk; ++i)
         {
             float s = outDc.process (tmp[i]) * outGain;
+            sumSq += s * s;
+            guardGain += guardStep;
+            s *= guardGain;
             if (stealing)
             {
                 s *= stealGain;
@@ -619,6 +718,7 @@ void Voice::render (float* out, int numSamples, const Params& p, const VoiceMod&
             return;
         }
 
+        guardRms += (sumSq / (float) chunk - guardRms) * (1.0f - (float) std::exp (-(double) chunk / (0.12 * fs)));
         level = std::max (peak, level * (float) std::exp (-(double) chunk / (0.05 * fs)));
         samplesSinceStart += chunk;
         done += chunk;

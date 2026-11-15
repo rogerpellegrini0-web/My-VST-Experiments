@@ -70,6 +70,8 @@ private:
     int  numHeld = 0;
     bool monoReleasePending = false;   // keys up, sustain pedal still down
     float expressionFor (int note) const noexcept;
+    float pressureFor (int note) const noexcept;   // aftertouch-like sources, curved
+    float strangeFor (int note) const noexcept;
     uint64_t stamp = 0;
 
     std::vector<float> mono;

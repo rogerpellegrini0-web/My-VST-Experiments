@@ -6,6 +6,7 @@ namespace
     const juce::Colour kPanel      { 0xff1e2129 };
     const juce::Colour kText       { 0xffd9dde6 };
     const juce::Colour kDim        { 0xff7d8494 };
+    const juce::Colour kStrangeAccent { 0xffb67cf2 };   // the strange knob is always violet
 
     const juce::Colour kExciterAccent[] = {
         juce::Colour (0xffe08a4b),   // pluck: orange
@@ -82,7 +83,8 @@ void FilamentLookAndFeel::drawRotarySlider (juce::Graphics& g, int x, int y, int
 
     juce::Path val;
     val.addCentredArc (centre.x, centre.y, radius - track, radius - track, 0.0f, startAngle, angle, true);
-    g.setColour (accent.withAlpha (alpha));
+    const auto custom = s.getProperties()["accent"];
+    g.setColour ((custom.isVoid() ? accent : juce::Colour ((juce::uint32) (int) custom)).withAlpha (alpha));
     g.strokePath (val, juce::PathStrokeType (track, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
 
     const float inner = radius - track * 2.2f;
@@ -126,10 +128,17 @@ FilamentEditor::FilamentEditor (FilamentProcessor& p)
     sections.push_back ({ "RESONATOR", { make ("position", "Position"), make ("decay", "Decay"), make ("damping", "Damping"),
                                          make ("stiffness", "Stiffness"), make ("release", "Release") }, {} });
     sections.push_back ({ "EXPRESSION", { make ("atBreath", "AT \xe2\x86\x92 Breath"), make ("wheelBreath", "Wheel \xe2\x86\x92 Breath"),
-                                          make ("exprCurve", "Curve"), make ("growl", "Growl"), make ("wheelVib", "Wheel \xe2\x86\x92 Vib") }, {} });
+                                          make ("exprCurve", "Curve"), make ("growl", "Growl"), make ("atStrange", "AT \xe2\x86\x92 Strange"),
+                                          make ("wheelVib", "Wheel \xe2\x86\x92 Vib") }, {} });
     sections.push_back ({ "PLAY",       { make ("glide", "Glide"), make ("bendRange", "Bend"), make ("velSens", "Vel Sens") }, {} });
     sections.back().extra = &modeBox;
     sections.push_back ({ "VIBRATO",    { make ("vibRate", "Rate"), make ("vibDepth", "Depth") }, {} });
+    sections.push_back ({ "STRANGE",    { make ("strange", "Strange") }, {} });
+    {
+        auto& k = knob ("strange");
+        k.slider.getProperties().set ("accent", (int) kStrangeAccent.getARGB());
+        k.label.setColour (juce::Label::textColourId, kStrangeAccent);
+    }
     sections.push_back ({ "BODY / OUT", { make ("bodyMix", "Body Mix"), make ("bodySize", "Body Size"),
                                           make ("level", "Level") }, {} });
 
@@ -235,7 +244,7 @@ void FilamentEditor::paint (juce::Graphics& g)
 
     for (auto& s : sections)
     {
-        g.setColour (kPanel);
+        g.setColour (s.title == "STRANGE" ? kPanel.interpolatedWith (kStrangeAccent, 0.08f) : kPanel);
         g.fillRoundedRectangle (s.bounds.toFloat(), 8.0f);
         g.setColour (kDim);
         g.setFont (juce::FontOptions (11.5f, juce::Font::bold));
@@ -267,17 +276,22 @@ void FilamentEditor::resized()
     area.removeFromTop (gap);
     auto row3 = area;
 
-    auto layoutRow = [gap] (juce::Rectangle<int> row, Section& a, Section& b)
+    auto layoutRow = [gap] (juce::Rectangle<int> row, std::initializer_list<Section*> secs)
     {
-        const int total = a.cells() + b.cells();
-        const int wA = (row.getWidth() - gap) * a.cells() / total;
-        a.bounds = row.removeFromLeft (wA);
-        row.removeFromLeft (gap);
-        b.bounds = row;
+        int total = 0;
+        for (auto* sec : secs) total += sec->cells();
+        const int usable = row.getWidth() - gap * ((int) secs.size() - 1);
+        int i = 0;
+        for (auto* sec : secs)
+        {
+            const bool last = ++i == (int) secs.size();
+            sec->bounds = last ? row : row.removeFromLeft (usable * sec->cells() / total);
+            if (! last) row.removeFromLeft (gap);
+        }
     };
-    layoutRow (row1, sections[0], sections[1]);
-    layoutRow (row2, sections[2], sections[3]);
-    layoutRow (row3, sections[4], sections[5]);
+    layoutRow (row1, { &sections[0], &sections[1] });
+    layoutRow (row2, { &sections[2], &sections[3] });
+    layoutRow (row3, { &sections[4], &sections[5], &sections[6] });
 
     for (auto& s : sections)
     {

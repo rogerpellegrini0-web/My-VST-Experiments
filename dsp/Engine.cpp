@@ -123,7 +123,21 @@ float Engine::expressionFor (int note) const noexcept
     // Each amount blends from "fixed full drive" (0) to "drive follows the controller" (1).
     const float a = clampf (params.atToBreath, 0.0f, 1.0f);
     const float w = clampf (params.wheelToBreath, 0.0f, 1.0f);
-    return (1.0f - a + a * curve (src)) * (1.0f - w + w * curve (modWheel));
+    // Full pressure may drive up to 20 % past the knob setting (louder, brighter).
+    return (1.0f - a + a * 1.2f * curve (src)) * (1.0f - w + w * 1.2f * curve (modWheel));
+}
+
+float Engine::pressureFor (int note) const noexcept
+{
+    float src = std::max (channelPressure, breath);
+    if (note >= 0 && note < 128) src = std::max (src, polyPressure[(size_t) note]);
+    const float exponent = std::exp2 (-1.5f * clampf (params.exprCurve, -1.0f, 1.0f));
+    return std::pow (clampf (src, 0.0f, 1.0f), exponent);
+}
+
+float Engine::strangeFor (int note) const noexcept
+{
+    return clampf (params.atToStrange, 0.0f, 1.0f) * pressureFor (note);
 }
 
 void Engine::monoRemove (int note)
@@ -260,6 +274,7 @@ void Engine::render (float* left, float* right, int numSamples)
         if (v.isActive())
         {
             mod.expression = expressionFor (v.getNote());
+            mod.strangeAdd = strangeFor (v.getNote());
             v.render (mono.data(), numSamples, params, mod);
         }
 

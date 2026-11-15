@@ -83,6 +83,8 @@ juce::AudioProcessorValueTreeState::ParameterLayout FilamentProcessor::createLay
                                       return (v > 0 ? juce::String ("Light ") : juce::String ("Firm ")) + juce::String (juce::roundToInt (std::abs (v) * 100.0f));
                                   })));
     l.add (std::make_unique<APF> (id ("growl"),       "Growl",           juce::NormalisableRange<float> (0, 1), 0.0f, percent()));
+    l.add (std::make_unique<APF> (id ("atStrange"),   "AT to Strange",   juce::NormalisableRange<float> (0, 1), 0.0f, percent()));
+    l.add (std::make_unique<APF> (id ("strange"),     "Strange",         juce::NormalisableRange<float> (0, 1), 0.0f, percent()));
 
     l.add (std::make_unique<APF> (id ("bodyMix"),   "Body Mix",  juce::NormalisableRange<float> (0, 1), 0.4f, percent()));
     l.add (std::make_unique<APF> (id ("bodySize"),  "Body Size", juce::NormalisableRange<float> (0, 1), 0.5f, percent()));
@@ -118,6 +120,8 @@ FilamentProcessor::FilamentProcessor()
     raw.wheelVib  = p ("wheelVib");
     raw.exprCurve = p ("exprCurve");
     raw.growl     = p ("growl");
+    raw.atStrange = p ("atStrange");
+    raw.strange   = p ("strange");
     raw.bodyMix   = p ("bodyMix");
     raw.bodySize  = p ("bodySize");
     raw.level     = p ("level");
@@ -164,6 +168,8 @@ filament::Params FilamentProcessor::readParams() const
     p.wheelToVibrato = raw.wheelVib->load();
     p.exprCurve    = raw.exprCurve->load();
     p.growl        = raw.growl->load();
+    p.atToStrange  = raw.atStrange->load();
+    p.strange      = raw.strange->load();
     p.bodyMix      = raw.bodyMix->load();
     p.bodySize     = raw.bodySize->load();
     p.levelDb      = raw.level->load();

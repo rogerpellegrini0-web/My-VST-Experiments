@@ -238,7 +238,10 @@ int main (int argc, char** argv)
                 p.damping = u (rng); p.stiffness = u (rng); p.decay = 0.1f + 30 * u (rng);
                 p.attack = 0.001f + u (rng); p.release = 0.01f + 3 * u (rng);
                 p.vibratoDepth = u (rng); p.bodyMix = u (rng); p.bodySize = u (rng);
+                p.strange = u (rng) < 0.3f ? 0.0f : u (rng); p.atToStrange = u (rng);
+                p.voiceMode = (VoiceMode) std::min (2, (int) (u (rng) * 3)); p.glide = u (rng) * 0.3f;
                 eng.setParams (p);
+                eng.setChannelPressure (u (rng));
                 eng.setPitchBend (u (rng) * 2 - 1);
                 eng.setModWheel (u (rng));
                 eng.noteOn (24 + (int) (u (rng) * 84), 0.05f + u (rng) * 0.95f);
@@ -331,6 +334,64 @@ int main (int argc, char** argv)
         p.voiceMode = VoiceMode::Legato; run (p, L, mv);
         check (std::fabs (pitchAt (L, 0.75) - 300.0) < 10.0, "legato pluck: hammer-on changes pitch");
         check (rmsAt (L, 0.60, 0.65) < monoLevel, "legato pluck: softer than a re-pluck");
+    }
+
+    // ---------------------------------------------------------------- strange knob
+    std::printf ("\n== Strange knob ==\n");
+    {
+        const double fs = 48000.0;
+        auto check = [&] (bool ok, const char* what) { if (! ok) ++failures; std::printf ("  %-58s %s\n", what, ok ? "ok" : "FAIL"); };
+
+        // every pairing, every 10 %: stable, releases, level within a sane window
+        bool stable = true, released = true, levelsOk = true;
+        float lo = 0.0f, hi = -200.0f;
+        for (int e = 0; e < kNumExciters; ++e)
+        for (int r = 0; r < kNumResonators; ++r)
+        for (int k = 0; k <= 10; ++k)
+        {
+            Engine eng; eng.prepare (fs, 512);
+            Params p = comboParams (e, r); p.strange = (float) k / 10.0f; p.bodyMix = 0;
+            eng.setParams (p);
+            Render rr = renderNote (eng, 57, 0.8f, fs, 1.0, 4.0);
+            stable = stable && allFinite (rr.L);
+            released = released && eng.activeVoiceCount() == 0;
+            double rms = 0; const int a = (int) (0.3 * fs), len = (int) (0.5 * fs);
+            for (int i = a; i < a + len; ++i) rms += (double) rr.L[(size_t) i] * rr.L[(size_t) i];
+            const float db = (float) (10.0 * std::log10 (rms / len + 1e-20));
+            if (db > -60.0f) { lo = std::min (lo, db); hi = std::max (hi, db); }
+            if (db > -3.0f) levelsOk = false;
+            if (verbose && (db < -40.0f || db > -8.0f))
+                std::printf ("    %s/%s strange %.1f: %.1f dB\n", kExcNames[e], kResNames[r], p.strange, db);
+        }
+        check (stable, "all pairings x 0..100 %: output finite");
+        check (released, "all pairings x 0..100 %: voices end after release");
+        check (levelsOk, "all pairings x 0..100 %: no voice louder than -3 dBFS RMS");
+        std::printf ("  (sounding levels span %.1f .. %.1f dBFS RMS)\n", lo, hi);
+
+        // inharmonicity of a plucked A2: mean |deviation| of partials 2..8 from k * f0
+        auto inharm = [&] (float strange) {
+            Engine eng; eng.prepare (fs, 512);
+            Params p = comboParams (0, 0); p.vibratoDepth = 0; p.bodyMix = 0; p.decay = 8; p.strange = strange;
+            eng.setParams (p);
+            Render rr = renderNote (eng, 45, 0.9f, fs, 0.8, 0.0);
+            const int a = (int) (0.05 * fs), len = (int) (0.6 * fs);
+            auto mag = [&] (double f) {
+                double re = 0, im = 0;
+                for (int i = 0; i < len; ++i) { const double w = 0.5 - 0.5 * std::cos (2 * M_PI * i / len), ph = 2 * M_PI * f * i / fs;
+                                                re += w * rr.L[(size_t) (a + i)] * std::cos (ph); im -= w * rr.L[(size_t) (a + i)] * std::sin (ph); }
+                return std::sqrt (re * re + im * im); };
+            double dev = 0;
+            for (int k = 2; k <= 8; ++k)
+            {
+                double best = 0, bf = 0;
+                for (double f = 110.0 * (k - 0.45); f <= 110.0 * (k + 0.45); f += 0.5) { const double m = mag (f); if (m > best) { best = m; bf = f; } }
+                dev += std::fabs (1200.0 * std::log2 (bf / (110.0 * k)));
+            }
+            return dev / 7.0; };
+        const double h0 = inharm (0.0f), h5 = inharm (0.5f);
+        std::printf ("  plucked A2 partial deviation: %.1f cents at 0 %%, %.1f cents at 50 %%\n", h0, h5);
+        check (h0 < 3.0, "strange 0 %: harmonic partials");
+        check (h5 > 20.0, "strange 50 %: clearly inharmonic partials");
     }
 
     // ---------------------------------------------------------------- demos
