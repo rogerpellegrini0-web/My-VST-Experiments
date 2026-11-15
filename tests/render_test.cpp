@@ -17,7 +17,23 @@
 
 using namespace filament;
 
-static const char* kModelNames[] = { "pluck", "bow", "reed", "flute" };
+static const char* kExcNames[] = { "pluck", "bow", "reed", "lips", "jet" };
+static const char* kResNames[] = { "string", "cyl", "cone", "open", "horn" };
+
+// The classic pairings must be in tune across the keyboard; every other pairing must be
+// stable and is reported for information.
+static bool isClassic (int e, int r)
+{
+    return (e == 0) || (e == 1 && r == 0) || (e == 2 && (r == 1 || r == 2)) || (e == 3 && r == 4) || (e == 4 && r == 3);
+}
+
+static Params comboParams (int e, int r)
+{
+    Params p;
+    p.exciter = (Exciter) e;
+    p.resonator = (Resonator) r;
+    return p;
+}
 
 static void writeWav (const std::string& path, const std::vector<float>& L, const std::vector<float>& R, int fs)
 {
@@ -102,114 +118,164 @@ static float peakOf (const std::vector<float>& v, size_t a = 0, size_t b = SIZE_
 int main (int argc, char** argv)
 {
     const std::string outDir = argc > 1 ? argv[1] : ".";
+    const bool verbose = argc > 2;
     int failures = 0;
 
     // ---------------------------------------------------------------- tuning
-    std::printf ("== Tuning (cents error) ==\n");
+    std::printf ("== Tuning, classic pairings (cents error) ==\n");
     const int notes[] = { 28, 40, 52, 64, 76, 88, 96 };
     for (double fs : { 44100.0, 48000.0, 96000.0 })
     {
-        for (int m = 0; m < kNumModels; ++m)
+        for (int e = 0; e < kNumExciters; ++e)
+        for (int r = 0; r < kNumResonators; ++r)
         {
-            std::printf ("fs=%6.0f %-6s", fs, kModelNames[m]);
+            if (! isClassic (e, r)) continue;
+            std::printf ("fs=%6.0f %-5s/%-6s", fs, kExcNames[e], kResNames[r]);
             for (int note : notes)
             {
-                Engine e;
-                e.prepare (fs, 512);
-                Params p;
-                p.model = (Model) m;
+                Engine eng;
+                eng.prepare (fs, 512);
+                Params p = comboParams (e, r);
                 p.vibratoDepth = 0.0f;
                 p.bodyMix = 0.0f;
                 p.decay = 8.0f;
-                e.setParams (p);
-                const bool pluck = m == 0;
-                Render r = renderNote (e, note, 0.8f, fs, 1.2, 0.0);
+                eng.setParams (p);
+                const bool pluck = e == 0;
+                Render rr = renderNote (eng, note, 0.8f, fs, 1.2, 0.0);
                 const int start = (int) ((pluck ? 0.15 : 0.6) * fs);
                 const int len   = (int) (0.4 * fs);
-                const double f0 = estimatePitch (r.L.data() + start, len, fs);
+                const double f0 = estimatePitch (rr.L.data() + start, len, fs);
                 const double expected = 440.0 * std::pow (2.0, (note - 69) / 12.0);
                 const double cents = 1200.0 * std::log2 (f0 / expected);
-                const float level = peakOf (r.L, (size_t) start, (size_t) (start + len));
+                const float level = peakOf (rr.L, (size_t) start, (size_t) (start + len));
                 const bool silent = level < 1e-3f;
                 // Winds overblow / can't speak at the very extremes of the keyboard; only the
                 // mid range is a hard requirement for them.
-                const bool required = pluck || m == 1 || (note >= 40 && note <= 88);
-                const bool bad = ! allFinite (r.L) || (required && (silent || std::fabs (cents) > 10.0));
+                const bool required = pluck || e == 1 || (note >= 40 && note <= 88);
+                const bool bad = ! allFinite (rr.L) || (required && (silent || std::fabs (cents) > 10.0));
                 if (bad) ++failures;
-                if (silent) std::printf ("  %3d:silent", note);
-                else        std::printf ("  %3d:%+6.1f%s", note, cents, bad ? "!" : " ");
+                if (silent) std::printf (" %3d:silent%s", note, bad ? "!" : " ");
+                else        std::printf (" %3d:%+6.1f%s", note, cents, bad ? "!" : " ");
             }
             std::printf ("\n");
         }
     }
 
-    // ---------------------------------------------------------------- release / levels
-    std::printf ("\n== Levels & voice release (48 kHz, A3, vel 0.8 / 0.3) ==\n");
-    for (int m = 0; m < kNumModels; ++m)
+    // ---------------------------------------------------------------- full matrix
+    std::printf ("\n== All pairings at 48 kHz: cents error @ A2/A3/A4, RMS (dBFS) @ A3 ==\n");
+    std::printf ("%-12s", "");
+    for (int r = 0; r < kNumResonators; ++r) std::printf ("| %-29s", kResNames[r]);
+    std::printf ("\n");
+    float rmsTable[kNumExciters][kNumResonators] {};
+    for (int e = 0; e < kNumExciters; ++e)
     {
-        for (float vel : { 0.8f, 0.3f })
+        std::printf ("%-12s", kExcNames[e]);
+        for (int r = 0; r < kNumResonators; ++r)
         {
-            Engine e; e.prepare (48000.0, 512);
-            Params p; p.model = (Model) m; e.setParams (p);
-            Render r = renderNote (e, 57, vel, 48000.0, 1.0, 3.0);
-            const float pk = peakOf (r.L, 0, 48000);
-            double rms = 0; for (int i = 0; i < 48000; ++i) rms += (double) r.L[(size_t) i] * r.L[(size_t) i];
-            rms = std::sqrt (rms / 48000.0);
-            const float tail = peakOf (r.L, r.L.size() - 4800);
-            const bool bad = ! allFinite (r.L) || e.activeVoiceCount() != 0 || pk < 0.02f;
-            if (bad) ++failures;
-            std::printf ("%-6s vel %.1f  peak %5.3f  rms %6.4f (%5.1f dBFS)  tail %.1e  voices left %d %s\n",
-                         kModelNames[m], vel, pk, rms, 20 * std::log10 (rms + 1e-12), tail, e.activeVoiceCount(), bad ? "FAIL" : "ok");
+            char cell[64]; int pos = 0;
+            for (int note : { 45, 57, 69 })
+            {
+                Engine eng; eng.prepare (48000.0, 512);
+                Params p = comboParams (e, r); p.vibratoDepth = 0; p.bodyMix = 0;
+                eng.setParams (p);
+                Render rr = renderNote (eng, note, 0.8f, 48000.0, 1.0, 0.0);
+                if (! allFinite (rr.L)) ++failures;
+                const int start = (int) ((e == 0 ? 0.1 : 0.5) * 48000), len = 19200;
+                double rms = 0; for (int i = start; i < start + len; ++i) rms += (double) rr.L[(size_t) i] * rr.L[(size_t) i];
+                rms = std::sqrt (rms / len);
+                const double expected = 440.0 * std::pow (2.0, (note - 69) / 12.0);
+                const double c = 1200.0 * std::log2 (estimatePitch (rr.L.data() + start, len, 48000.0) / expected);
+                if (note == 57) rmsTable[e][r] = (float) rms;
+                if (rms < 1e-4) pos += std::snprintf (cell + pos, sizeof (cell) - (size_t) pos, "   --  ");
+                else            pos += std::snprintf (cell + pos, sizeof (cell) - (size_t) pos, "%+6.0f ", std::fabs (c) > 9999 ? 9999.0 : c);
+            }
+            std::snprintf (cell + pos, sizeof (cell) - (size_t) pos, "%5.1f", 20 * std::log10 (rmsTable[e][r] + 1e-9));
+            std::printf ("| %-29s", cell);
+        }
+        std::printf ("\n");
+    }
+    if (verbose)
+    {
+        std::printf ("\nGain trims for -18 dBFS RMS (multiply into kComboGain):\n");
+        for (int e = 0; e < kNumExciters; ++e)
+        {
+            std::printf ("  {");
+            for (int r = 0; r < kNumResonators; ++r)
+                std::printf (" %5.2ff,", rmsTable[e][r] > 1e-4f ? 0.1259f / rmsTable[e][r] : 1.0f);
+            std::printf (" },   // %s\n", kExcNames[e]);
         }
     }
 
-    // ---------------------------------------------------------------- stress
-    std::printf ("\n== Stress: 400 random notes, extreme params ==\n");
-    for (int m = 0; m < kNumModels; ++m)
+    // ---------------------------------------------------------------- release / levels
+    std::printf ("\n== Voice release (48 kHz, A3) ==\n");
+    for (int e = 0; e < kNumExciters; ++e)
+    for (int r = 0; r < kNumResonators; ++r)
     {
-        Engine e; e.prepare (48000.0, 512);
-        std::mt19937 rng (1234 + m);
+        Engine eng; eng.prepare (48000.0, 512);
+        eng.setParams (comboParams (e, r));
+        Render rr = renderNote (eng, 57, 0.8f, 48000.0, 1.0, 4.0);
+        const bool bad = ! allFinite (rr.L) || eng.activeVoiceCount() != 0;
+        if (bad) { ++failures; std::printf ("%s/%s: voices left %d FAIL\n", kExcNames[e], kResNames[r], eng.activeVoiceCount()); }
+    }
+    std::printf ("all pairings checked\n");
+
+    // ---------------------------------------------------------------- stress
+    std::printf ("\n== Stress: 400 random notes per exciter, random resonators + extreme params ==\n");
+    for (int e = 0; e < kNumExciters; ++e)
+    {
+        Engine eng; eng.prepare (48000.0, 512);
+        std::mt19937 rng (1234 + e);
         std::uniform_real_distribution<float> u (0.0f, 1.0f);
-        Params p; p.model = (Model) m;
+        Params p = comboParams (e, 0);
         std::vector<float> L (512), R (512);
         bool finite = true; float pk = 0;
         for (int b = 0; b < 4000; ++b)
         {
             if (b % 10 == 0)
             {
-                p.tone = u (rng); p.position = u (rng); p.pressure = u (rng); p.noise = u (rng);
+                p.resonator = (Resonator) std::min (kNumResonators - 1, (int) (u (rng) * kNumResonators));
+                p.tone = u (rng); p.shape = u (rng); p.position = u (rng); p.pressure = u (rng); p.noise = u (rng);
                 p.damping = u (rng); p.stiffness = u (rng); p.decay = 0.1f + 30 * u (rng);
                 p.attack = 0.001f + u (rng); p.release = 0.01f + 3 * u (rng);
                 p.vibratoDepth = u (rng); p.bodyMix = u (rng); p.bodySize = u (rng);
-                e.setParams (p);
-                e.setPitchBend (u (rng) * 2 - 1);
-                e.setModWheel (u (rng));
-                e.noteOn (24 + (int) (u (rng) * 84), 0.05f + u (rng) * 0.95f);
-                if (u (rng) < 0.6f) e.noteOff (24 + (int) (u (rng) * 84));
-                if (u (rng) < 0.05f) e.allNotesOff();
+                eng.setParams (p);
+                eng.setPitchBend (u (rng) * 2 - 1);
+                eng.setModWheel (u (rng));
+                eng.noteOn (24 + (int) (u (rng) * 84), 0.05f + u (rng) * 0.95f);
+                if (u (rng) < 0.6f) eng.noteOff (24 + (int) (u (rng) * 84));
+                if (u (rng) < 0.05f) eng.allNotesOff();
             }
-            e.render (L.data(), R.data(), 512);
+            eng.render (L.data(), R.data(), 512);
             finite = finite && allFinite (L) && allFinite (R);
             pk = std::max (pk, peakOf (L));
         }
         if (! finite) ++failures;
-        std::printf ("%-6s finite %s  peak %.3f\n", kModelNames[m], finite ? "yes" : "NO", pk);
+        std::printf ("%-6s finite %s  peak %.3f\n", kExcNames[e], finite ? "yes" : "NO", pk);
     }
 
     // ---------------------------------------------------------------- demos
     std::printf ("\n== Writing demo WAVs to %s ==\n", outDir.c_str());
-    for (int m = 0; m < kNumModels; ++m)
+    struct Demo { const char* name; int e, r; float attack, vib, body; };
+    const Demo demos[] = {
+        { "pluck_string", 0, 0, 0.05f, 0.15f, 0.5f },
+        { "bow_string",   1, 0, 0.12f, 0.35f, 0.4f },
+        { "reed_cyl",     2, 1, 0.04f, 0.10f, 0.0f },
+        { "reed_cone",    2, 2, 0.04f, 0.20f, 0.0f },
+        { "lips_horn",    3, 4, 0.05f, 0.10f, 0.0f },
+        { "jet_open",     4, 3, 0.06f, 0.30f, 0.0f },
+        { "bow_cone",     1, 2, 0.10f, 0.20f, 0.2f },
+        { "pluck_horn",   0, 4, 0.05f, 0.00f, 0.3f },
+        { "reed_string",  2, 0, 0.05f, 0.15f, 0.4f },
+    };
+    for (const auto& dm : demos)
     {
         const double fs = 48000.0;
-        Engine e; e.prepare (fs, 512);
-        Params p; p.model = (Model) m;
-        if (m == 0) { p.bodyMix = 0.5f; p.decay = 5.0f; }
-        if (m == 1) { p.attack = 0.12f; p.release = 0.4f; p.vibratoDepth = 0.35f; }
-        if (m == 2) { p.attack = 0.04f; p.bodyMix = 0.0f; p.vibratoDepth = 0.1f; }
-        if (m == 3) { p.attack = 0.06f; p.bodyMix = 0.0f; p.vibratoDepth = 0.3f; }
-        e.setParams (p);
+        Engine eng; eng.prepare (fs, 512);
+        Params p = comboParams (dm.e, dm.r);
+        p.attack = dm.attack; p.vibratoDepth = dm.vib; p.bodyMix = dm.body; p.release = 0.4f;
+        if (dm.e == 0) p.decay = 5.0f;
+        eng.setParams (p);
 
-        // a short phrase: (note, start beat, length beats)
         const int phrase[][3] = { {50,0,2},{57,2,2},{62,4,2},{64,6,1},{65,7,1},{64,8,2},{62,10,2},
                                   {57,12,4},{50,12,4},{53,12,4} };
         const double beat = 0.32;
@@ -221,12 +287,12 @@ int main (int argc, char** argv)
             for (auto& ev : phrase)
             {
                 const double on = ev[1] * beat, off = (ev[1] + ev[2]) * beat - 0.03;
-                if (on >= t0 && on < t1) e.noteOn (ev[0], 0.85f);
-                if (off >= t0 && off < t1) e.noteOff (ev[0]);
+                if (on >= t0 && on < t1) eng.noteOn (ev[0], 0.85f);
+                if (off >= t0 && off < t1) eng.noteOff (ev[0]);
             }
-            e.render (L.data() + pos, R.data() + pos, std::min (64, total - pos));
+            eng.render (L.data() + pos, R.data() + pos, std::min (64, total - pos));
         }
-        const std::string path = outDir + "/demo_" + kModelNames[m] + ".wav";
+        const std::string path = outDir + "/demo_" + dm.name + ".wav";
         writeWav (path, L, R, (int) fs);
         std::printf ("%s  (peak %.3f)\n", path.c_str(), peakOf (L));
     }

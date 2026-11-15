@@ -4,16 +4,34 @@ Filament is a polyphonic VST3 instrument that builds its sounds from digital wav
 These are small simulations of vibrating strings and air columns, not samples or
 oscillators. It's built with [JUCE](https://juce.com) and tested with Cubase on Windows in mind.
 
-## Models
+## How it works: exciter + resonator
 
-| Model | How it works | Main controls |
+Every sound is an **exciter** (what sets things vibrating) driving a **resonator**
+(what vibrates and sets the pitch). The two are joined at a scattering junction,
+the way the driver/pipe split works in 1990s "virtual acoustic" synthesizers.
+Any exciter can drive any resonator, which gives 25 combinations.
+
+| Exciter | How it works | Main controls |
 |---|---|---|
-| **Plucked String** | Single delay loop with a loss filter and stiffness (dispersion) allpasses, excited by a shaped pick burst. A pick-position comb removes harmonics that have a node at the pluck point. | Hardness, Pluck Pos, Pick Noise, Decay, Damping, Stiffness |
-| **Bowed String** | Two waveguide segments (bow→nut, bow→bridge) joined by a nonlinear stick-slip friction junction. | Bow Speed, Bow Pos, Bow Force, Attack |
-| **Reed** | Clarinet-style closed/open bore (odd harmonics) driven by a pressure-dependent reed reflection table. | Aperture, Reed Stiffness, Breath, Breath Noise |
-| **Flute** | Open bore coupled to an air-jet delay with a cubic jet nonlinearity. | Jet Reflect, Jet Length, Breath, Breath Noise |
+| **Pluck** | Shaped pick/mallet burst (smooth pulse + noise, hardness lowpass) | Hardness, Pick Noise |
+| **Bow** | Stick-slip friction junction | Bow Speed, Rosin, Bow Force, Attack |
+| **Reed** | Pressure-controlled reed valve (reflection table) | Aperture, Reed Stiffness, Breath |
+| **Lips** | Outward-striking lip valve: a damped mass-spring pushed open by mouth pressure, with the flow solved exactly every sample | Lip Tension, Lip Opening, Breath |
+| **Air Jet** | Jet delay with a cubic edge nonlinearity | Jet Reflect, Jet Length, Breath |
 
-All four models share these stages:
+| Resonator | How it works |
+|---|---|
+| **String** | Two waveguide segments either side of the excitation point; loss filter + stiffness (dispersion) allpasses |
+| **Cylindrical Tube** | Closed at the driver, open at the far end: odd harmonics (clarinet-like) |
+| **Conical Tube** | Driven near the narrow end: all harmonics (sax/oboe-like) |
+| **Open Tube** | Open at both ends: all harmonics (flute-like) |
+| **Horn** | Flared bore. With Lips it is two periods long, so its modes sit at every half-harmonic and lip tension chooses between them, bugle-style |
+
+Classic pairings: Pluck/Bow + String, Reed + Cylindrical or Conical Tube, Lips + Horn,
+Air Jet + Open Tube. The other pairings are there for experimenting (bowed cone,
+plucked horn, reed-driven string...).
+
+All pairings share these stages:
 - an instrument body resonator: a bank of body modes, slightly detuned between left and right for stereo width
 - vibrato with a delayed onset
 - velocity response
@@ -22,8 +40,12 @@ All four models share these stages:
 MIDI: notes, velocity, pitch bend (range adjustable), mod wheel (adds vibrato) and the sustain pedal.
 
 Tuning is computed rather than approximated. Each loop's length is the note's period minus
-the phase delay of every filter inside the loop. The test suite checks that every model
-stays within a few cents across the keyboard at 44.1, 48 and 96 kHz.
+the phase delay of every filter inside the loop. Where a nonlinear exciter pulls the pitch
+(lips, air jet, bow), measured corrections are applied. The test suite checks that the
+classic pairings stay within a few cents across the keyboard at 44.1, 48 and 96 kHz,
+that all 25 pairings are stable, level-matched and release cleanly, and it renders demo WAVs.
+
+Projects saved with version 0.1 (single "Model" menu) load with the matching exciter and resonator.
 
 ## Installing on Windows (Cubase)
 

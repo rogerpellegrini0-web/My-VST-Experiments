@@ -1,18 +1,22 @@
 // Filament - waveguide physical modeling synth
 //
-// The four models are digital waveguides in the tradition of Karplus-Strong,
-// Julius O. Smith III and the STK (Cook & Scavone):
+// Each voice is an Exciter (driver) coupled to a Resonator through a scattering
+// junction, in the tradition of Karplus-Strong, Julius O. Smith III's digital
+// waveguides, the STK (Cook & Scavone) and the driver/pipe split of 1990s
+// "virtual acoustic" synthesizers. Every sample:
 //
-//  * Plucked string : single delay loop + loss filter + dispersion allpasses,
-//                     excited by a shaped, pick-position-combed burst.
-//  * Bowed string   : two delay lines (bow->nut, bow->bridge) joined at the bow by a
-//                     nonlinear friction (stick-slip) junction.
-//  * Reed           : clarinet-style bore (closed/open tube, odd harmonics) driven by a
-//                     pressure-controlled reed reflection table.
-//  * Flute          : bore + air-jet delay with a cubic jet nonlinearity.
+//   1. the resonator reports `x`, the wave arriving at the excitation point
+//      (for two-segment resonators: the sum of the waves from both sides),
+//   2. the exciter returns `d`, what it injects there,
+//   3. the resonator sends x/d onward: two-segment resonators pass each side's wave
+//      through to the other side plus d; single-segment tubes reflect x + d back in.
 //
-// Tuning is exact to within a few cents: each loop's target length is the period
-// minus the phase delay (at the fundamental) of every filter inside the loop.
+// With d = 0 every resonator is a passive, decaying resonance, so any exciter can be
+// paired with any resonator.
+//
+// Tuning is exact to within a few cents: each loop's length is the period minus the
+// phase delay (at the fundamental) of every filter inside the loop, plus small measured
+// corrections for the nonlinear junctions.
 
 #include "Voice.h"
 
@@ -28,17 +32,29 @@ namespace
     {
         return std::pow (10.0f, -3.0f / (std::max (0.01f, t60) * f));
     }
+
+    // Output level trim per [exciter][resonator], measured with the offline renderer so every
+    // combination sits around -18 dBFS RMS at default settings.
+    constexpr float kComboGain[kNumExciters][kNumResonators] = {
+        //  String  CylTube  ConTube  OpenTube  Horn
+        {   3.78f,  5.22f,   2.09f,   7.32f,    6.93f },   // Pluck
+        {   0.82f,  1.59f,   0.77f,   0.80f,    8.00f },   // Bow
+        {   0.51f,  0.58f,   0.35f,   0.79f,    0.70f },   // Reed
+        {   0.40f,  1.23f,   0.38f,   0.83f,    4.28f },   // Lips
+        {   0.26f,  0.24f,   0.16f,   0.25f,    0.25f },   // Jet
+    };
 }
 
 void Voice::prepare (double sampleRate, uint32_t noiseSeed)
 {
     fs = sampleRate;
-    const int maxDelay = (int) (fs / 20.0) + 64;      // lowest pitch: 20 Hz
+    const int maxDelay = (int) (2.0 * fs / 20.0) + 64;   // horn loop is two periods of 20 Hz
     dlA.setMaxDelay (maxDelay);
     dlB.setMaxDelay (maxDelay);
+    dlJet.setMaxDelay (maxDelay);
     excitation.assign ((size_t) (2 * maxDelay), 0.0f);
     scratch.assign (excitation.size(), 0.0f);
-    dc.setup (fs, 15.0f);
+    loopDc.setup (fs, 5.0f);
     outDc.setup (fs, 10.0f);
     noise.seed (noiseSeed);
     reset();
@@ -47,11 +63,12 @@ void Voice::prepare (double sampleRate, uint32_t noiseSeed)
 void Voice::reset()
 {
     active = gate = stealing = false;
-    dlA.clear(); dlB.clear();
+    dlA.clear(); dlB.clear(); dlJet.clear();
     loopLP.reset();
     for (auto& ap : disp) ap.reset();
-    dc.reset();
+    loopDc.reset();
     outDc.reset();
+    lipY1 = lipY2 = 0.0f;
     env = level = 0.0f;
     exLen = exPos = 0;
     stealGain = 1.0f;
@@ -66,7 +83,9 @@ float Voice::velocityToAmp (float vel, const Params& p) const noexcept
 void Voice::start (int newNote, float vel, const Params& p)
 {
     reset();
-    model    = p.model;
+    exciter    = p.exciter;
+    resonator  = p.resonator;
+    twoSegment = isTwoSegment (resonator);
     note     = newNote;
     velocity = vel;
     amp      = velocityToAmp (vel, p);
@@ -75,17 +94,15 @@ void Voice::start (int newNote, float vel, const Params& p)
     samplesSinceStart = 0;
     vibPhase = 0.0f;
 
-    switch (model)
-    {
-        // Level-matched so every model sits around -18 dBFS RMS at default settings.
-        // Winds respond to breath pressure rather than velocity, so velocity scales output.
-        case Model::PluckedString: outGain = 3.2f;  break;
-        case Model::BowedString:   outGain = 0.65f; break;
-        case Model::Reed:          outGain = 0.55f * (0.35f + 0.65f * amp); break;
-        case Model::Flute:         outGain = 0.33f * (0.3f + 0.7f * amp);  break;
-    }
+    reflSign  = resonator == Resonator::CylindricalTube ? -1.0f : 1.0f;
+    useLoopDc = resonator == Resonator::OpenTube || resonator == Resonator::Horn;
 
-    if (model == Model::PluckedString)
+    // Sustained exciters respond to breath/bow rather than velocity alone, so velocity
+    // also scales their output a little.
+    const float velScale = exciter == Exciter::Pluck ? 1.0f : (0.4f + 0.6f * amp);
+    outGain = kComboGain[(int) exciter][(int) resonator] * velScale;
+
+    if (exciter == Exciter::Pluck)
         buildPluckExcitation (vel, p);
 }
 
@@ -94,8 +111,8 @@ void Voice::retrigger (float vel, const Params& p)
     velocity = vel;
     amp  = velocityToAmp (vel, p);
     gate = true;
-    if (model == Model::PluckedString)
-        buildPluckExcitation (vel, p);   // re-pluck on top of the still-ringing string
+    if (exciter == Exciter::Pluck)
+        buildPluckExcitation (vel, p);   // re-pluck on top of the still-ringing resonator
 }
 
 void Voice::release() { gate = false; }
@@ -118,13 +135,14 @@ void Voice::buildPluckExcitation (float vel, const Params& p)
 
     const float hard  = clampf (p.tone * (0.55f + 0.6f * vel), 0.0f, 1.0f);
     const float nz    = clampf (p.noise, 0.0f, 1.0f);
-    const float pos   = knob3 (p.position, 0.03f, 0.13f, 0.5f);
-    const int   P     = std::max (1, (int) std::lround (pos * (float) L));
     const int   W     = std::max (2, (int) ((1.0f - hard) * (1.0f - hard) * (float) L * 0.5f) + 2);
-    const int   len   = std::min ((int) excitation.size() - 1, std::max (L, W) + P);
 
-    // raw burst: smooth "finger/pick" pulse + windowed noise
-    std::fill (excitation.begin(), excitation.begin() + len + 1, 0.0f);
+    // On a two-segment resonator the pick position comes for free (the burst is injected at
+    // the excitation point and travels both ways). Single-segment tubes are driven at their
+    // end, so the position comb is applied to the burst instead.
+    const int P   = twoSegment ? 0 : std::max (1, (int) std::lround (knob3 (p.position, 0.03f, 0.13f, 0.5f) * (float) L));
+    const int len = std::min ((int) excitation.size() - 1, std::max (L, W) + P);
+
     float* raw = scratch.data();
     for (int n = 0; n < len; ++n)
     {
@@ -135,14 +153,12 @@ void Voice::buildPluckExcitation (float vel, const Params& p)
         raw[n] = (1.0f - nz) * pulse + nz * nzs;
     }
 
-    // pick-position comb (removes harmonics with a node at the pluck point),
-    // then a hardness-dependent lowpass.
     OnePoleLP lp;
     lp.p = poleForRate ((1.0f - hard) * 0.9f, fs);
     float peak = 1e-9f;
     for (int n = 0; n < len; ++n)
     {
-        const float combed = raw[n] - (n >= P ? raw[n - P] : 0.0f);
+        const float combed = P > 0 ? raw[n] - (n >= P ? raw[n - P] : 0.0f) : raw[n];
         const float y = lp.process (combed);
         excitation[(size_t) n] = y;
         peak = std::max (peak, std::fabs (y));
@@ -164,6 +180,176 @@ float Voice::envTick() noexcept
 }
 
 //==============================================================================
+void Voice::setupExciter (const Params& p, float f, float period)
+{
+    switch (exciter)
+    {
+        case Exciter::Pluck:
+            break;
+
+        case Exciter::Bow:
+            shapeA    = knob3 (p.pressure, 5.0f, 3.0f, 1.2f);   // friction curve slope (force)
+            shapeB    = knob3 (p.shape, 0.9f, 0.75f, 0.6f);     // stick threshold (rosin)
+            maxDrive  = (0.03f + 0.2f * amp) * knob3 (p.tone, 0.4f, 1.0f, 1.8f);
+            noiseGain = p.noise * 0.3f;
+            break;
+
+        case Exciter::Reed:
+            // reed stiffness; the conical bore overblows to the octave with a stiff reed, so
+            // its range is shifted softer
+            shapeA    = resonator == Resonator::ConicalTube ? knob3 (p.shape, -0.15f, -0.24f, -0.4f)
+                                                            : knob3 (p.shape, -0.18f, -0.3f, -0.45f);
+            shapeB    = knob3 (p.tone, 0.6f, 0.7f, 0.8f);       // reed aperture
+            maxDrive  = knob3 (p.pressure, 0.35f, 0.6f, 0.95f) * (0.85f + 0.15f * amp);
+            noiseGain = p.noise * 0.6f;
+            break;
+
+        case Exciter::Lips:
+        {
+            // Outward-striking lip valve: a damped mass-spring (resonant lowpass, Q ~ 5) pushed
+            // open by the pressure difference across it, with a small rest opening. Its tuning
+            // relative to the bore mode bends the pitch, as a brass player's lip tension does.
+            const float fBore = f / boreScale;
+            const float lipHz = clampf (fBore * std::exp2 (lipPitchOct), 20.0f, (float) fs * 0.3f);
+            const float wl = kTwoPi * lipHz / (float) fs;
+            const float r  = std::exp (-wl / (2.0f * 5.0f));
+            lipA1 = -2.0f * r * std::cos (wl);
+            lipA2 = r * r;
+            lipB  = 1.0f + lipA1 + lipA2;
+            lipRest   = knob3 (p.shape, 0.02f, 0.05f, 0.12f);
+            maxDrive  = knob3 (p.pressure, 0.3f, 0.6f, 1.0f) * (0.4f + 0.6f * amp);
+            noiseGain = p.noise * 0.3f;
+            break;
+        }
+
+        case Exciter::Jet:
+        {
+            const float jr = knob3 (p.shape, 0.44f, 0.5f, 0.56f);   // jet length / period
+            const float target = std::max (2.0f, period * jr);
+            if (firstControl) { dJ = target; dJStep = 0.0f; }
+            else              dJStep = (target - dJ) / (float) kControlBlock;
+            shapeA    = knob3 (p.tone, 0.3f, 0.5f, 0.7f);           // jet reflection
+            maxDrive  = knob3 (p.pressure, 0.8f, 1.1f, 1.5f) * (0.85f + 0.15f * amp);
+            noiseGain = p.noise * 0.75f;
+            break;
+        }
+    }
+}
+
+float Voice::setupResonator (const Params& p, float f, float w, float period)
+{
+    const bool passive = exciter == Exciter::Pluck;
+
+    // --- loss filter
+    float pole = 0.0f;
+    switch (resonator)
+    {
+        case Resonator::String:          pole = passive ? knob3 (p.damping, 0.02f, 0.3f, 0.8f)
+                                                        : knob3 (p.damping, 0.3f, 0.6f, 0.88f); break;
+        case Resonator::CylindricalTube: pole = knob3 (p.damping, 0.05f, 0.3f, 0.75f); break;
+        case Resonator::ConicalTube:     pole = knob3 (p.damping, 0.05f, 0.3f, 0.75f); break;
+        case Resonator::OpenTube:        pole = knob3 (p.damping, 0.4f, 0.65f, 0.85f); break;
+        case Resonator::Horn:            pole = knob3 (p.damping, 0.05f, 0.2f, 0.7f);  break;
+    }
+    pole = poleForRate (pole, fs);
+
+    // --- loop gain
+    float t60 = p.decay * clampf (std::sqrt (220.0f / f), 0.3f, 1.5f);
+    if (! gate) t60 = std::min (t60, p.release);
+    float g = loopGainForT60 (t60, f);
+
+    if (passive)
+    {
+        // A struck/plucked resonator's loss filter may never attenuate the fundamental more
+        // than the decay time allows, otherwise high notes die instantly: limit the pole so
+        // |H(w0)| >= g. (Driven resonators need the extra loss to oscillate stably.)
+        const float m = std::min (0.99999f, g / 0.9999f);
+        const float A = 1.0f - m * m, Bh = 1.0f - m * m * std::cos (w);
+        const float pMax = (Bh - std::sqrt (std::max (0.0f, Bh * Bh - A * A))) / A;
+        pole = std::min (pole, pMax);
+    }
+    else if (resonator != Resonator::String)
+    {
+        // Driven tubes: decay sets how resonant the bore is, within the range where the
+        // exciters still speak reliably.
+        g = loopGainForT60 (p.decay, f);
+        switch (resonator)
+        {
+            case Resonator::OpenTube: g = clampf (g, 0.9f, 1.0f);    break;
+            // lips need a well-damped horn to lock onto one mode; other exciters need more gain
+            case Resonator::Horn:     g = exciter == Exciter::Lips ? clampf (g, 0.75f, 0.9f)
+                                                                   : clampf (g, 0.88f, 0.985f); break;
+            default:                  g = clampf (g, 0.88f, 0.985f); break;
+        }
+    }
+    loopLP.p = pole;
+
+    // --- dispersion (stiffness)
+    float a = -0.8f * clampf (p.stiffness, 0.0f, 1.0f);
+    auto filterDelay = [&] (float coef)
+    {
+        return OnePoleLP::phaseDelay (pole, w) + (float) kNumAllpass * Allpass1::phaseDelay (coef, w);
+    };
+    float pd = filterDelay (a);
+    while (pd > 0.3f * period && a < -0.001f) { a *= 0.7f; pd = filterDelay (a); }
+    for (auto& ap : disp) ap.a = a;
+
+    // --- loop lengths
+    float targetA = 2.0f, targetB = 2.0f;
+    switch (resonator)
+    {
+        case Resonator::String:
+        case Resonator::ConicalTube:
+        {
+            // +0.25 samples compensates the slight sharpening of the stick-slip bow junction.
+            const float total = period - pd + (exciter == Exciter::Bow ? 0.25f : 0.0f);
+            // fraction of the length on the far (bridge / bell) side of the excitation point
+            const float beta = resonator == Resonator::String ? knob3 (p.position, 0.03f, 0.13f, 0.5f)
+                                                              : knob3 (p.position, 0.95f, 0.8f, 0.55f);
+            targetA = std::max (2.0f, total * beta);
+            targetB = std::max (2.0f, total - targetA);
+            break;
+        }
+        // Closed at the driver, open at the far end: the inverting reflection makes the
+        // period two trips around the loop.
+        case Resonator::CylindricalTube: targetA = std::max (2.0f, 0.5f * period - pd); break;
+        case Resonator::OpenTube:        loopDc.setup (fs, 15.0f);
+                                         targetA = std::max (2.0f, period - pd);        break;
+        // Twice as long: modes at every half-harmonic, so the lips can pick between them.
+        // For lips the horn is two periods long, giving modes at every
+        // half-harmonic so the lips can pick between them like a bugle. Other exciters can't
+        // select a mode and would sound an octave low, so they get a one-period horn.
+        case Resonator::Horn:
+        {
+            const bool modal = exciter == Exciter::Lips;
+            // In the two-period horn the in-loop high-pass tracks the note, weakening the
+            // "pedal" mode an octave below so low notes don't fall into it.
+            loopDc.setup (fs, exciter == Exciter::Lips ? 0.35f * f : 5.0f);
+            targetA = std::max (2.0f, (modal ? 2.0f : 1.0f) * period - pd);
+            break;
+        }
+    }
+
+    // Compensate the loss of the fractional-delay interpolators, then the loss filter.
+    float interp = DelayLine::interpolationMagnitude (targetA, w);
+    if (twoSegment) interp *= DelayLine::interpolationMagnitude (targetB, w);
+    if (passive || resonator == Resonator::String)
+        g = std::min (0.99995f, g / (OnePoleLP::magnitude (pole, w) * interp));
+
+    if (firstControl)
+    {
+        dA = targetA; dB = targetB;
+        dAStep = dBStep = 0.0f;
+    }
+    else
+    {
+        const float inv = 1.0f / (float) kControlBlock;
+        dAStep = (targetA - dA) * inv;
+        dBStep = (targetB - dB) * inv;
+    }
+    return g;
+}
+
 void Voice::updateControl (const Params& p, float bendSemis, float modWheel, int chunk)
 {
     const float t = (float) ((double) samplesSinceStart / fs);
@@ -177,198 +363,177 @@ void Voice::updateControl (const Params& p, float bendSemis, float modWheel, int
     const float semis = (float) note - 69.0f + bendSemis + depth * onset * std::sin (vibPhase);
     const float f     = clampf (noteToHz (semis), 20.0f, (float) fs / 8.0f);
     const float w     = kTwoPi * f / (float) fs;
-    const float period = (float) fs / f;
+    float period      = (float) fs / f;
+
+    // The air jet's pitch is set jointly by the bore and the jet loop, so it drifts with
+    // jet length. Measured offline: ~ -7.8 cents per 0.01 of jet ratio and ~ +2.7 cents per
+    // octave; compensated by scaling the whole instrument.
+    boreScale = 1.0f;
+    if (exciter == Exciter::Jet)
+    {
+        const float jr    = knob3 (p.shape, 0.44f, 0.5f, 0.56f);
+        const float cents = -778.0f * (jr - 0.5064f) + 2.7f * std::log2 (f / 110.0f);
+        boreScale = std::exp2 (cents / 1200.0f);
+    }
+    else if (exciter == Exciter::Lips)
+    {
+        // Lips sound above the bore mode they lock to, more so the tighter they are.
+        // Measured offline (cents vs lip tuning in octaves), compensated by lengthening the bore.
+        static constexpr float kOct[]   = { -0.5f, -0.4f, -0.3f, -0.2f, -0.1f, 0.0f };
+        static constexpr float kCents[] = { 42.0f, 48.0f, 60.0f, 79.0f, 126.0f, 210.0f };
+        lipPitchOct = knob3 (p.tone, -0.45f, -0.3f, 0.0f);
+        int i = 0;
+        while (i < 4 && lipPitchOct > kOct[i + 1]) ++i;
+        const float tt = clampf ((lipPitchOct - kOct[i]) / (kOct[i + 1] - kOct[i]), 0.0f, 1.0f);
+        // The table is for the horn; other resonators load the lips differently.
+        static constexpr float kResonatorOffset[kNumResonators] = { -59.0f, 202.0f, -57.0f, -30.0f, 0.0f };
+        const float cents = lerpf (kCents[i], kCents[i + 1], tt)
+                          + 5.0f * clampf (std::log2 (440.0f / f) * 0.5f, 0.0f, 1.0f)
+                          + kResonatorOffset[(int) resonator];
+        boreScale = std::exp2 (cents / 1200.0f);
+    }
+    period *= boreScale;
 
     attackInc   = 1.0f / (float) (std::max (0.001f, p.attack) * fs);
     releaseCoef = (float) std::exp (-6.9 / (std::max (0.005f, p.release) * fs));
 
-    float targetA = 2.0f, targetB = 2.0f, targetGain = 0.99f;
-
-    // Common string loop: one-pole loss filter + dispersion allpass chain.
-    auto setupStringLoop = [&] (float pole, bool limitPole) -> float
-    {
-        float t60 = p.decay * clampf (std::sqrt (220.0f / f), 0.3f, 1.5f);
-        if (! gate) t60 = std::min (t60, p.release);
-        const float g = loopGainForT60 (t60, f);
-
-        // A plucked string's loss filter may never attenuate the fundamental more than the
-        // decay time allows, otherwise high notes die instantly: limit the pole so
-        // |H(w0)| >= g. (The bowed string is continuously driven and actually needs the
-        // extra high-frequency loss to stay in stable Helmholtz motion.)
-        const float m = std::min (0.99999f, g / 0.9999f);
-        const float A = 1.0f - m * m, Bh = 1.0f - m * m * std::cos (w);
-        const float pMax = (Bh - std::sqrt (std::max (0.0f, Bh * Bh - A * A))) / A;
-        if (limitPole) pole = std::min (pole, pMax);
-
-        loopLP.p = pole;
-        float a  = -0.8f * clampf (p.stiffness, 0.0f, 1.0f);
-        auto filterDelay = [&] (float coef)
-        {
-            return OnePoleLP::phaseDelay (pole, w) + (float) kNumAllpass * Allpass1::phaseDelay (coef, w);
-        };
-        float pd = filterDelay (a);
-        while (pd > 0.5f * period && a < -0.001f) { a *= 0.7f; pd = filterDelay (a); }
-        for (auto& ap : disp) ap.a = a;
-
-        targetGain = g / OnePoleLP::magnitude (pole, w);
-        return std::max (2.0f, period - pd);
-    };
-
-    switch (model)
-    {
-        case Model::PluckedString:
-        {
-            targetA = setupStringLoop (poleForRate (knob3 (p.damping, 0.02f, 0.3f, 0.8f), fs), true);
-            targetGain = std::min (0.99995f, targetGain / DelayLine::interpolationMagnitude (targetA, w));
-            break;
-        }
-
-        case Model::BowedString:
-        {
-            const float total = setupStringLoop (poleForRate (knob3 (p.damping, 0.3f, 0.6f, 0.88f), fs), false);
-            const float beta  = knob3 (p.position, 0.03f, 0.127f, 0.45f);
-            // +0.25 samples compensates the slight sharpening caused by the stick-slip junction.
-            const float totalC = total + 0.25f;
-            targetB = std::max (2.0f, totalC * beta);           // bow -> bridge -> bow
-            targetA = std::max (2.0f, totalC - targetB);       // bow -> nut -> bow
-            targetGain = std::min (0.99995f, targetGain / (DelayLine::interpolationMagnitude (targetA, w)
-                                                           * DelayLine::interpolationMagnitude (targetB, w)));
-            shapeA    = knob3 (p.pressure, 5.0f, 3.0f, 1.2f);  // friction curve slope
-            maxDrive  = (0.03f + 0.2f * amp) * knob3 (p.tone, 0.4f, 1.0f, 1.8f);
-            noiseGain = p.noise * 0.3f;
-            break;
-        }
-
-        case Model::Reed:
-        {
-            loopLP.p = poleForRate (knob3 (p.damping, 0.05f, 0.3f, 0.75f), fs);
-            // Closed-open tube: the inverting reflection makes the period two loop trips.
-            targetA    = std::max (2.0f, 0.5f * period - OnePoleLP::phaseDelay (loopLP.p, w));
-            targetGain = clampf (loopGainForT60 (p.decay, f), 0.88f, 0.985f);
-            shapeA     = knob3 (p.position, -0.18f, -0.3f, -0.45f);   // reed stiffness
-            shapeB     = knob3 (p.tone, 0.6f, 0.7f, 0.8f);            // reed aperture
-            maxDrive   = knob3 (p.pressure, 0.35f, 0.6f, 0.95f) * (0.85f + 0.15f * amp);
-            noiseGain  = p.noise * 0.6f;
-            break;
-        }
-
-        case Model::Flute:
-        {
-            loopLP.p = poleForRate (knob3 (p.damping, 0.4f, 0.65f, 0.85f), fs);
-            // The flute's pitch is set jointly by the bore and the jet loop, so it drifts with
-            // jet length. The jet range is limited to where the model reliably speaks on its
-            // fundamental, and the drift (measured offline: ~ -7.8 cents per 0.01 of jet
-            // ratio, ~ +2.7 cents per octave) is compensated by scaling the whole instrument.
-            const float jr    = knob3 (p.position, 0.44f, 0.5f, 0.62f);
-            const float cents = -778.0f * (jr - 0.5064f) + 2.7f * std::log2 (f / 110.0f);
-            const float pc    = period * std::exp2 (cents / 1200.0f);
-            targetA    = std::max (2.0f, pc * jr);
-            targetB    = std::max (2.0f, pc - OnePoleLP::phaseDelay (loopLP.p, w));
-            targetGain = clampf (loopGainForT60 (p.decay, f), 0.9f, 1.0f);
-            shapeA     = knob3 (p.tone, 0.3f, 0.5f, 0.7f);            // jet reflection
-            maxDrive   = knob3 (p.pressure, 0.8f, 1.1f, 1.5f) * (0.85f + 0.15f * amp);
-            noiseGain  = p.noise * 0.75f;
-            break;
-        }
-    }
+    setupExciter (p, f, period);
+    const float targetGain = setupResonator (p, f, w, period);
 
     if (firstControl)
     {
-        dA = targetA; dB = targetB; loopGain = targetGain;
-        dAStep = dBStep = loopGainStep = 0.0f;
+        loopGain = targetGain;
+        loopGainStep = 0.0f;
         firstControl = false;
     }
     else
     {
-        const float inv = 1.0f / (float) chunk;
-        dAStep       = (targetA - dA) * inv;
-        dBStep       = (targetB - dB) * inv;
-        loopGainStep = (targetGain - loopGain) * inv;
+        loopGainStep = (targetGain - loopGain) / (float) chunk;
+    }
+
+    // per-sample steps were computed for a full control block
+    if (chunk != kControlBlock)
+    {
+        const float k = (float) kControlBlock / (float) chunk;
+        dAStep *= k; dBStep *= k; dJStep *= k;
     }
 }
 
 //==============================================================================
-void Voice::renderPluck (float* out, int n)
+float Voice::excite (float x) noexcept
+{
+    switch (exciter)
+    {
+        case Exciter::Pluck:
+            return exPos < exLen ? excitation[(size_t) exPos++] : 0.0f;
+
+        case Exciter::Bow:
+        {
+            const float e      = envTick();
+            const float bowVel = maxDrive * e * (1.0f + noiseGain * noise.next());
+            const float dv     = bowVel - x;
+            // STK-style friction curve: sticks (reflection 1) at small relative velocity.
+            const float tt = std::fabs (dv * shapeA) + shapeB;
+            const float t2 = tt * tt;
+            const float friction = std::min (1.0f, 1.0f / (t2 * t2));
+            const float contact  = gate ? 1.0f : e;           // bow lifts off on release
+            return dv * friction * contact;
+        }
+
+        case Exciter::Reed:
+        {
+            const float e = envTick();
+            float breath  = maxDrive * e;
+            breath += breath * noiseGain * noise.next();
+            const float pdiff = x - breath;
+            const float reed  = clampf (shapeB + shapeA * pdiff, -1.0f, 1.0f);
+            return pdiff * (reed - 1.0f);    // fully closed reed (1) = rigid wall: no injection
+        }
+
+        case Exciter::Lips:
+        {
+            const float e = envTick();
+            float pm = maxDrive * e;
+            pm += pm * noiseGain * noise.next();
+            // Solve the flow exactly for this sample: with opening h, pressure drop dp and
+            // injected wave d = h*sqrt|dp|, dp = q - d where q = pm - (pressure from the bore).
+            // That is a quadratic in s = sqrt|dp| (an explicit one-sample-late solution
+            // creates a parasitic squeal near fs/10).
+            const float h  = std::max (0.0f, lipRest + lipY1);
+            const float q  = pm - (twoSegment ? 1.0f : 2.0f) * x;
+            const float sq = 0.5f * (-h + std::sqrt (h * h + 4.0f * std::fabs (q)));
+            const float sg = q >= 0.0f ? 1.0f : -1.0f;
+            const float dp = sg * sq * sq;
+            const float lip = lipB * dp - lipA1 * lipY1 - lipA2 * lipY2;
+            lipY2 = lipY1; lipY1 = lip;
+            return h * sg * sq;
+        }
+
+        case Exciter::Jet:
+        {
+            const float e = envTick();
+            float breath  = maxDrive * e;
+            breath += breath * noiseGain * noise.next();
+            dJ += dJStep;
+            // a two-segment resonator passes the injection both ways: halve the coupling
+            const float k = twoSegment ? 0.5f : 1.0f;
+            const float jetOut = dlJet.read (dJ);
+            dlJet.push (breath - shapeA * k * x);
+            const float jet = clampf (jetOut * (jetOut * jetOut - 1.0f), -1.0f, 1.0f);
+            const float contact = gate ? 1.0f : e;   // no breath, no jet
+            return (jet - 0.5f * k * x) * contact * k;   // the edge reflects half the bore wave
+        }
+    }
+    return 0.0f;
+}
+
+void Voice::renderSamples (float* out, int n) noexcept
 {
     for (int i = 0; i < n; ++i)
     {
-        dA += dAStep; loopGain += loopGainStep;
-        float y = loopLP.process (dlA.read (dA));
+        dA += dAStep; dB += dBStep; loopGain += loopGainStep;
+
+        // 1. wave arriving at the excitation point
+        const float rawFar = dlA.read (dA);
+        float y = loopLP.process (rawFar);
         for (auto& ap : disp) y = ap.process (y);
-        y *= loopGain;
-        const float ex = exPos < exLen ? excitation[(size_t) exPos++] : 0.0f;
-        const float s  = y + ex;
-        dlA.push (s);
-        out[i] = s;
-    }
-}
 
-void Voice::renderBow (float* out, int n)
-{
-    for (int i = 0; i < n; ++i)
-    {
-        dA += dAStep; dB += dBStep; loopGain += loopGainStep;
+        float reflFar, reflNear = 0.0f, x;
+        if (twoSegment)
+        {
+            reflFar  = -loopGain * y;        // bridge / bell end (lossy, inverting)
+            reflNear = -dlB.read (dB);       // nut / mouthpiece end (rigid, inverting)
+            x = reflFar + reflNear;
+        }
+        else
+        {
+            reflFar = reflSign * loopGain * y;
+            if (useLoopDc) reflFar = loopDc.process (reflFar);
+            x = reflFar;
+        }
 
-        float b = loopLP.process (dlB.read (dB));
-        for (auto& ap : disp) b = ap.process (b);
-        const float bridgeRefl = -loopGain * b;
-        const float nutRefl    = -dlA.read (dA);
-        const float stringVel  = bridgeRefl + nutRefl;
+        // 2. exciter
+        const float d = excite (x);
 
-        const float e      = envTick();
-        const float bowVel = maxDrive * e * (1.0f + noiseGain * noise.next());
-        const float dv     = bowVel - stringVel;
+        // 3. scatter
+        if (twoSegment)
+        {
+            dlB.push (reflFar + d);
+            dlA.push (reflNear + d);
+        }
+        else
+        {
+            dlA.push (x + d);
+        }
 
-        // STK-style friction curve: sticks (reflection 1) at small relative velocity.
-        const float tt = std::fabs (dv * shapeA) + 0.75f;
-        const float t2 = tt * tt;
-        const float friction = std::min (1.0f, 1.0f / (t2 * t2));
-        const float contact  = gate ? 1.0f : e;           // bow lifts off on release
-        const float newVel   = dv * friction * contact;
-
-        dlA.push (bridgeRefl + newVel);
-        dlB.push (nutRefl + newVel);
-        out[i] = bridgeRefl;
-    }
-}
-
-void Voice::renderReed (float* out, int n)
-{
-    for (int i = 0; i < n; ++i)
-    {
-        dA += dAStep; loopGain += loopGainStep;
-
-        const float bore = dlA.read (dA);
-        const float e    = envTick();
-        float breath     = maxDrive * e;
-        breath += breath * noiseGain * noise.next();
-
-        const float refl  = -loopGain * loopLP.process (bore);
-        const float pdiff = refl - breath;
-        const float reed  = clampf (shapeB + shapeA * pdiff, -1.0f, 1.0f);
-        dlA.push (breath + pdiff * reed);
-        out[i] = bore;
-    }
-}
-
-void Voice::renderFlute (float* out, int n)
-{
-    for (int i = 0; i < n; ++i)
-    {
-        dA += dAStep; dB += dBStep; loopGain += loopGainStep;
-
-        const float boreOut = dlB.read (dB);
-        const float e = envTick();
-        float breath  = maxDrive * e;
-        breath += breath * noiseGain * noise.next();
-
-        const float temp   = dc.process (loopGain * loopLP.process (boreOut));
-        const float jetOut = dlA.read (dA);
-        dlA.push (breath - shapeA * temp);
-
-        const float jet = clampf (jetOut * (jetOut * jetOut - 1.0f), -1.0f, 1.0f);
-        dlB.push (jet + 0.5f * temp);
-        out[i] = boreOut;
+        switch (resonator)
+        {
+            case Resonator::String:          out[i] = reflFar;           break;   // force on bridge
+            case Resonator::ConicalTube:     out[i] = x + d;             break;   // pressure at reed
+            case Resonator::CylindricalTube:
+            case Resonator::OpenTube:        out[i] = rawFar;            break;
+            case Resonator::Horn:            out[i] = rawFar - reflFar;  break;   // transmitted through the bell
+        }
     }
 }
 
@@ -385,13 +550,7 @@ void Voice::render (float* out, int numSamples, const Params& p, float bendSemis
         updateControl (p, bendSemis, modWheel, chunk);
 
         float tmp[kControlBlock];
-        switch (model)
-        {
-            case Model::PluckedString: renderPluck (tmp, chunk); break;
-            case Model::BowedString:   renderBow   (tmp, chunk); break;
-            case Model::Reed:          renderReed  (tmp, chunk); break;
-            case Model::Flute:         renderFlute (tmp, chunk); break;
-        }
+        renderSamples (tmp, chunk);
 
         float peak = 0.0f;
         for (int i = 0; i < chunk; ++i)
@@ -416,8 +575,8 @@ void Voice::render (float* out, int numSamples, const Params& p, float bendSemis
         samplesSinceStart += chunk;
         done += chunk;
 
-        const bool exciterDone = model == Model::PluckedString ? exPos >= exLen : env < 1e-4f;
-        if (! stealing && (model == Model::PluckedString || ! gate) && exciterDone
+        const bool exciterDone = exciter == Exciter::Pluck ? exPos >= exLen : env < 1e-4f;
+        if (! stealing && (exciter == Exciter::Pluck || ! gate) && exciterDone
             && level < 2e-5f && samplesSinceStart > (int64_t) (0.05 * fs))
             active = false;
     }

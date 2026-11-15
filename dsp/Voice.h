@@ -10,8 +10,8 @@
 namespace filament
 {
 
-// One polyphonic voice. Each voice owns the waveguide state for whichever model it
-// was started with; the model is latched at note-on.
+// One polyphonic voice: an Exciter driving a Resonator through a scattering junction.
+// Exciter and resonator are latched at note-on.
 class Voice
 {
 public:
@@ -39,17 +39,18 @@ private:
     static constexpr int kNumAllpass   = 4;
 
     void updateControl (const Params& p, float bendSemis, float modWheel, int chunk);
+    void setupExciter (const Params& p, float f, float period);
+    float setupResonator (const Params& p, float f, float w, float period);   // returns loop gain
     void buildPluckExcitation (float velocity, const Params& p);
     float velocityToAmp (float velocity, const Params& p) const noexcept;
     float envTick() noexcept;
+    float excite (float incoming) noexcept;
+    void renderSamples (float* out, int n) noexcept;
 
-    void renderPluck (float* out, int n);
-    void renderBow   (float* out, int n);
-    void renderReed  (float* out, int n);
-    void renderFlute (float* out, int n);
-
-    double fs = 48000.0;
-    Model  model = Model::PluckedString;
+    double    fs = 48000.0;
+    Exciter   exciter   = Exciter::Pluck;
+    Resonator resonator = Resonator::String;
+    bool      twoSegment = true;
     int    note = 60;
     float  velocity = 0.8f, amp = 0.8f;
     bool   active = false, gate = false, firstControl = true;
@@ -62,26 +63,38 @@ private:
     float pendingVelocity = 0.0f;
     float stealGain = 1.0f, stealStep = 0.0f;
 
-    // waveguide state
-    DelayLine dlA, dlB;
+    // resonator state
+    DelayLine dlA;     // far segment (to bridge / bell) or the whole bore
+    DelayLine dlB;     // near segment (to nut / mouthpiece), two-segment resonators only
+    DelayLine dlJet;   // air-jet delay (Jet exciter)
     OnePoleLP loopLP;
     std::array<Allpass1, kNumAllpass> disp;
-    DCBlocker dc, outDc;
-    Noise     noise;
+    DCBlocker loopDc, outDc;
+    float reflSign = -1.0f;   // end reflection sign for single-segment tubes
+    bool  useLoopDc = false;
 
     // smoothly-interpolated control values (per sample)
     float dA = 100.0f, dAStep = 0.0f;
     float dB = 100.0f, dBStep = 0.0f;
+    float dJ = 10.0f,  dJStep = 0.0f;
     float loopGain = 0.99f, loopGainStep = 0.0f;
 
     // exciter state
     std::vector<float> excitation, scratch;   // preallocated: no allocation on the audio thread
     int   exLen = 0, exPos = 0;
     float env = 0.0f, attackInc = 0.001f, releaseCoef = 0.999f;
-    float maxDrive = 0.0f;       // bow velocity / breath pressure target
+    float maxDrive  = 0.0f;   // bow velocity / breath pressure target
     float noiseGain = 0.0f;
-    float shapeA = 0.0f;         // model-specific: bow slope | reed slope | jet reflection
-    float shapeB = 0.0f;         // model-specific: reed offset
+    float shapeA = 0.0f;      // bow slope | reed slope | jet reflection
+    float shapeB = 0.0f;      // bow stick threshold | reed offset
+    Noise noise;
+
+    // lip (mass-spring, 2-pole resonant lowpass), Lips exciter
+    float lipB = 0.0f, lipA1 = 0.0f, lipA2 = 0.0f, lipRest = 0.05f;
+    float lipY1 = 0.0f, lipY2 = 0.0f;
+    float lipPitchOct = -0.3f;    // lip resonance relative to the sounding mode
+    float boreScale = 1.0f;       // pitch compensation for exciters that pull the resonance
+
     float outGain = 1.0f;
 
     // modulation

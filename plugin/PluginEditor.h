@@ -37,7 +37,7 @@ private:
     };
 
     void timerCallback() override;
-    void updateForModel (int model);
+    void updateForModel();
     Knob& knob (const juce::String& id);
 
     FilamentProcessor& processor;
@@ -46,11 +46,12 @@ private:
     std::vector<std::unique_ptr<Knob>> knobs;
     std::vector<Section> sections;
 
-    juce::ComboBox modelBox;
-    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> modelAttachment;
+    juce::ComboBox exciterBox, resonatorBox;
+    juce::Label exciterLabel { {}, "EXCITER" }, resonatorLabel { {}, "RESONATOR" };
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> exciterAttachment, resonatorAttachment;
     juce::MidiKeyboardComponent keyboard;
 
-    int currentModel = -1;
+    int currentExciter = -1, currentResonator = -1;
     juce::String modelDescription;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (FilamentEditor)

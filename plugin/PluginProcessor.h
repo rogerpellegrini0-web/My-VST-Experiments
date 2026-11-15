@@ -36,6 +36,8 @@ public:
     void setStateInformation (const void* data, int sizeInBytes) override;
 
     static juce::AudioProcessorValueTreeState::ParameterLayout createLayout();
+    static juce::StringArray exciterNames();
+    static juce::StringArray resonatorNames();
 
     juce::AudioProcessorValueTreeState apvts;
     juce::MidiKeyboardState keyboardState;   // on-screen keyboard
@@ -43,14 +45,17 @@ public:
 private:
     filament::Params readParams() const;
     void handleMidi (const juce::MidiMessage& m);
+    static void migrateFromV1 (juce::XmlElement& xml);
 
     filament::Engine engine;
     juce::AudioBuffer<float> scratch;   // second channel when the host gives us mono out
 
     struct Raw
     {
-        std::atomic<float>* model {};
+        std::atomic<float>* exciter {};
+        std::atomic<float>* resonator {};
         std::atomic<float>* tone {};
+        std::atomic<float>* shape {};
         std::atomic<float>* position {};
         std::atomic<float>* pressure {};
         std::atomic<float>* noise {};

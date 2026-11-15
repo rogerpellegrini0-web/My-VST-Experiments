@@ -7,32 +7,48 @@ namespace
     const juce::Colour kText       { 0xffd9dde6 };
     const juce::Colour kDim        { 0xff7d8494 };
 
-    const juce::Colour kModelAccent[] = {
-        juce::Colour (0xffe0a64b),   // plucked: amber
-        juce::Colour (0xffd8644f),   // bowed: rosin red
+    const juce::Colour kExciterAccent[] = {
+        juce::Colour (0xffe08a4b),   // pluck: orange
+        juce::Colour (0xffd8644f),   // bow: rosin red
         juce::Colour (0xff57b8a0),   // reed: teal
-        juce::Colour (0xff7d9be8),   // flute: blue
+        juce::Colour (0xffe6c25a),   // lips: brass
+        juce::Colour (0xff7d9be8),   // jet: blue
     };
 
-    const char* kModelDescriptions[] = {
-        "Single delay-loop string  -  shaped pick burst, loss filter, stiffness allpasses",
-        "Two-segment string waveguide joined by a stick-slip bow friction junction",
-        "Closed-open bore driven by a pressure-controlled reed reflection table",
-        "Open bore coupled to an air-jet delay with a cubic jet nonlinearity",
+    const char* kExciterDescriptions[] = {
+        "Pluck: shaped pick burst",
+        "Bow: stick-slip friction junction",
+        "Reed: pressure-controlled reed valve",
+        "Lips: mass-spring lip valve, solved per sample",
+        "Air Jet: jet delay with cubic edge nonlinearity",
     };
 
-    // Per-model knob labels; an empty label means "not used by this model".
-    struct LabelSet { const char* id; const char* names[4]; };
-    const LabelSet kLabels[] = {
-        { "tone",      { "Hardness",   "Bow Speed",    "Aperture",     "Jet Reflect" } },
-        { "position",  { "Pluck Pos",  "Bow Pos",      "Reed Stiff",   "Jet Length" } },
-        { "pressure",  { "",           "Bow Force",    "Breath",       "Breath" } },
-        { "noise",     { "Pick Noise", "Bow Noise",    "Breath Noise", "Breath Noise" } },
-        { "attack",    { "",           "Attack",       "Attack",       "Attack" } },
-        { "decay",     { "Decay",      "Decay",        "Resonance",    "Resonance" } },
-        { "damping",   { "Damping",    "Damping",      "Damping",      "Damping" } },
-        { "stiffness", { "Stiffness",  "Stiffness",    "",             "" } },
+    const char* kResonatorDescriptions[] = {
+        "String: two waveguide segments with loss + stiffness",
+        "Cylindrical Tube: closed at the driver, odd harmonics",
+        "Conical Tube: driven near the narrow end, all harmonics",
+        "Open Tube: open at both ends, all harmonics",
+        "Horn: flared bore whose modes the lips select between",
     };
+
+    // Per-exciter knob labels; an empty label means "not used".
+    struct ExciterLabels { const char* id; const char* names[5]; };
+    const ExciterLabels kExciterLabels[] = {
+        //                Pluck          Bow            Reed            Lips           Air Jet
+        { "tone",     { "Hardness",   "Bow Speed",   "Aperture",     "Lip Tension", "Jet Reflect" } },
+        { "shape",    { "",           "Rosin",       "Reed Stiff",   "Lip Opening", "Jet Length" } },
+        { "pressure", { "",           "Bow Force",   "Breath",       "Breath",      "Breath" } },
+        { "noise",    { "Pick Noise", "Bow Noise",   "Breath Noise", "Breath Noise","Breath Noise" } },
+        { "attack",   { "",           "Attack",      "Attack",       "Attack",      "Attack" } },
+    };
+
+    juce::String positionLabel (int exciter, int resonator)
+    {
+        const bool twoSegment = resonator == 0 || resonator == 2;
+        if (exciter == 0) return "Pluck Pos";
+        if (! twoSegment) return {};
+        return exciter == 1 ? "Bow Pos" : "Drive Pos";
+    }
 }
 
 //==============================================================================
@@ -105,25 +121,35 @@ FilamentEditor::FilamentEditor (FilamentProcessor& p)
         return knobs.back().get();
     };
 
-    sections.push_back ({ "EXCITER",   { make ("tone", "Tone"), make ("position", "Position"), make ("pressure", "Pressure"),
+    sections.push_back ({ "EXCITER",   { make ("tone", "Tone"), make ("shape", "Shape"), make ("pressure", "Pressure"),
                                          make ("noise", "Noise"), make ("attack", "Attack") }, {} });
-    sections.push_back ({ "RESONATOR", { make ("decay", "Decay"), make ("damping", "Damping"),
+    sections.push_back ({ "RESONATOR", { make ("position", "Position"), make ("decay", "Decay"), make ("damping", "Damping"),
                                          make ("stiffness", "Stiffness"), make ("release", "Release") }, {} });
     sections.push_back ({ "MODULATION",{ make ("vibRate", "Vib Rate"), make ("vibDepth", "Vib Depth"),
                                          make ("bendRange", "Bend"), make ("velSens", "Vel Sens") }, {} });
     sections.push_back ({ "BODY / OUT",{ make ("bodyMix", "Body Mix"), make ("bodySize", "Body Size"),
                                          make ("level", "Level") }, {} });
 
-    modelBox.addItemList ({ "Plucked String", "Bowed String", "Reed", "Flute" }, 1);
-    addAndMakeVisible (modelBox);
-    modelAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment> (processor.apvts, "model", modelBox);
+    exciterBox.addItemList (FilamentProcessor::exciterNames(), 1);
+    resonatorBox.addItemList (FilamentProcessor::resonatorNames(), 1);
+    for (auto* l : { &exciterLabel, &resonatorLabel })
+    {
+        l->setFont (juce::FontOptions (11.5f, juce::Font::bold));
+        l->setColour (juce::Label::textColourId, kDim);
+        l->setJustificationType (juce::Justification::centredLeft);
+        addAndMakeVisible (*l);
+    }
+    addAndMakeVisible (exciterBox);
+    addAndMakeVisible (resonatorBox);
+    exciterAttachment   = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment> (processor.apvts, "exciter", exciterBox);
+    resonatorAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment> (processor.apvts, "resonator", resonatorBox);
 
     keyboard.setAvailableRange (24, 107);   // C1..B7: 49 white keys
     keyboard.setColour (juce::MidiKeyboardComponent::keyDownOverlayColourId, lnf.accent.withAlpha (0.6f));
     addAndMakeVisible (keyboard);
 
-    setSize (900, 500);
-    updateForModel ((int) processor.apvts.getRawParameterValue ("model")->load());
+    setSize (900, 510);
+    updateForModel();
     startTimerHz (15);
 }
 
@@ -143,25 +169,34 @@ FilamentEditor::Knob& FilamentEditor::knob (const juce::String& id)
 
 void FilamentEditor::timerCallback()
 {
-    const int m = (int) processor.apvts.getRawParameterValue ("model")->load();
-    if (m != currentModel) updateForModel (m);
+    const int e = (int) processor.apvts.getRawParameterValue ("exciter")->load();
+    const int r = (int) processor.apvts.getRawParameterValue ("resonator")->load();
+    if (e != currentExciter || r != currentResonator) updateForModel();
 }
 
-void FilamentEditor::updateForModel (int model)
+void FilamentEditor::updateForModel()
 {
-    currentModel = juce::jlimit (0, 3, model);
-    lnf.accent = kModelAccent[currentModel];
+    currentExciter   = juce::jlimit (0, 4, (int) processor.apvts.getRawParameterValue ("exciter")->load());
+    currentResonator = juce::jlimit (0, 4, (int) processor.apvts.getRawParameterValue ("resonator")->load());
+    lnf.accent = kExciterAccent[currentExciter];
     keyboard.setColour (juce::MidiKeyboardComponent::keyDownOverlayColourId, lnf.accent.withAlpha (0.6f));
-    modelDescription = kModelDescriptions[currentModel];
+    modelDescription = juce::String (kExciterDescriptions[currentExciter])
+                     + juce::String::fromUTF8 ("   \xe2\x86\x92   ") + kResonatorDescriptions[currentResonator];
 
-    for (auto& set : kLabels)
+    auto setLabel = [this] (const char* id, const juce::String& name)
     {
-        auto& k = knob (set.id);
-        const juce::String name = set.names[currentModel];
+        auto& k = knob (id);
         k.slider.setEnabled (name.isNotEmpty());
         k.label.setText (name.isNotEmpty() ? name : juce::String ("-"), juce::dontSendNotification);
         k.label.setAlpha (name.isNotEmpty() ? 1.0f : 0.35f);
-    }
+    };
+
+    for (auto& set : kExciterLabels)
+        setLabel (set.id, set.names[currentExciter]);
+
+    const bool drivenTube = currentExciter != 0 && currentResonator != 0;
+    setLabel ("position", positionLabel (currentExciter, currentResonator));
+    setLabel ("decay", drivenTube ? "Resonance" : "Decay");
     repaint();
 }
 
@@ -176,7 +211,7 @@ void FilamentEditor::paint (juce::Graphics& g)
     g.setColour (kDim);
     g.setFont (juce::FontOptions (13.0f));
     g.drawText ("waveguide physical modeling synth", 162, 20, 260, 20, juce::Justification::centredLeft);
-    g.drawText (modelDescription, 20, 52, getWidth() - 40, 18, juce::Justification::centredLeft);
+    g.drawText (modelDescription, 20, 62, getWidth() - 40, 18, juce::Justification::centredLeft);
 
     for (auto& s : sections)
     {
@@ -191,8 +226,14 @@ void FilamentEditor::paint (juce::Graphics& g)
 void FilamentEditor::resized()
 {
     auto area = getLocalBounds().reduced (16, 0);
-    auto header = area.removeFromTop (76);
-    modelBox.setBounds (header.removeFromRight (220).withSizeKeepingCentre (220, 30).translated (0, -10));
+    auto header = area.removeFromTop (86);
+    auto selectors = header.removeFromRight (440).withTrimmedTop (8).withHeight (52);
+    auto excArea = selectors.removeFromLeft (215);
+    selectors.removeFromLeft (10);
+    exciterLabel.setBounds (excArea.removeFromTop (18));
+    exciterBox.setBounds (excArea.withHeight (28));
+    resonatorLabel.setBounds (selectors.removeFromTop (18));
+    resonatorBox.setBounds (selectors.withHeight (28));
 
     keyboard.setBounds (getLocalBounds().removeFromBottom (70).reduced (16, 6));
     keyboard.setKeyWidth ((float) keyboard.getWidth() / 49.0f);

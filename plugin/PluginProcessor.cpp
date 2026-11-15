@@ -35,20 +35,31 @@ namespace
     }
 }
 
+juce::StringArray FilamentProcessor::exciterNames()
+{
+    return { "Pluck", "Bow", "Reed", "Lips", "Air Jet" };
+}
+
+juce::StringArray FilamentProcessor::resonatorNames()
+{
+    return { "String", "Cylindrical Tube", "Conical Tube", "Open Tube", "Horn" };
+}
+
 juce::AudioProcessorValueTreeState::ParameterLayout FilamentProcessor::createLayout()
 {
     juce::AudioProcessorValueTreeState::ParameterLayout l;
     auto id = [] (const char* s) { return juce::ParameterID { s, 1 }; };
 
-    l.add (std::make_unique<juce::AudioParameterChoice> (
-        id ("model"), "Model", juce::StringArray { "Plucked String", "Bowed String", "Reed", "Flute" }, 0));
+    l.add (std::make_unique<juce::AudioParameterChoice> (id ("exciter"),   "Exciter",   exciterNames(), 0));
+    l.add (std::make_unique<juce::AudioParameterChoice> (id ("resonator"), "Resonator", resonatorNames(), 0));
 
     l.add (std::make_unique<APF> (id ("tone"),      "Tone",      juce::NormalisableRange<float> (0, 1), 0.5f, percent()));
-    l.add (std::make_unique<APF> (id ("position"),  "Position",  juce::NormalisableRange<float> (0, 1), 0.5f, percent()));
+    l.add (std::make_unique<APF> (id ("shape"),     "Shape",     juce::NormalisableRange<float> (0, 1), 0.5f, percent()));
     l.add (std::make_unique<APF> (id ("pressure"),  "Pressure",  juce::NormalisableRange<float> (0, 1), 0.5f, percent()));
     l.add (std::make_unique<APF> (id ("noise"),     "Noise",     juce::NormalisableRange<float> (0, 1), 0.2f, percent()));
     l.add (std::make_unique<APF> (id ("attack"),    "Attack",    skewed (0.001f, 2.0f, 0.15f), 0.05f, seconds()));
 
+    l.add (std::make_unique<APF> (id ("position"),  "Position",  juce::NormalisableRange<float> (0, 1), 0.5f, percent()));
     l.add (std::make_unique<APF> (id ("decay"),     "Decay",     skewed (0.1f, 30.0f, 3.0f), 4.0f, seconds()));
     l.add (std::make_unique<APF> (id ("damping"),   "Damping",   juce::NormalisableRange<float> (0, 1), 0.5f, percent()));
     l.add (std::make_unique<APF> (id ("stiffness"), "Stiffness", juce::NormalisableRange<float> (0, 1), 0.1f, percent()));
@@ -70,8 +81,10 @@ FilamentProcessor::FilamentProcessor()
       apvts (*this, nullptr, "FilamentState", createLayout())
 {
     auto p = [this] (const char* name) { return apvts.getRawParameterValue (name); };
-    raw.model     = p ("model");
+    raw.exciter   = p ("exciter");
+    raw.resonator = p ("resonator");
     raw.tone      = p ("tone");
+    raw.shape     = p ("shape");
     raw.position  = p ("position");
     raw.pressure  = p ("pressure");
     raw.noise     = p ("noise");
@@ -107,8 +120,10 @@ void FilamentProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
 filament::Params FilamentProcessor::readParams() const
 {
     filament::Params p;
-    p.model        = (filament::Model) juce::jlimit (0, filament::kNumModels - 1, (int) raw.model->load());
+    p.exciter      = (filament::Exciter)   juce::jlimit (0, filament::kNumExciters - 1,   (int) raw.exciter->load());
+    p.resonator    = (filament::Resonator) juce::jlimit (0, filament::kNumResonators - 1, (int) raw.resonator->load());
     p.tone         = raw.tone->load();
+    p.shape        = raw.shape->load();
     p.position     = raw.position->load();
     p.pressure     = raw.pressure->load();
     p.noise        = raw.noise->load();
@@ -187,7 +202,42 @@ void FilamentProcessor::setStateInformation (const void* data, int sizeInBytes)
 {
     if (auto xml = getXmlFromBinary (data, sizeInBytes))
         if (xml->hasTagName (apvts.state.getType()))
+        {
+            migrateFromV1 (*xml);
             apvts.replaceState (juce::ValueTree::fromXml (*xml));
+        }
+}
+
+// Version 0.1 had a single "model" choice (plucked string, bowed string, reed, flute) and
+// used "position" for reed stiffness / jet length. Translate such projects to the
+// exciter + resonator layout so they still sound the same.
+void FilamentProcessor::migrateFromV1 (juce::XmlElement& xml)
+{
+    auto* model = xml.getChildByAttribute ("id", "model");
+    if (model == nullptr || xml.getChildByAttribute ("id", "exciter") != nullptr)
+        return;
+
+    const int m = juce::jlimit (0, 3, juce::roundToInt (model->getDoubleAttribute ("value")));
+    const int exciter[]   = { 0, 1, 2, 4 };   // pluck, bow, reed, jet
+    const int resonator[] = { 0, 0, 1, 3 };   // string, string, cylindrical, open
+
+    auto add = [&xml] (const char* id, double value)
+    {
+        auto* e = xml.createNewChildElement ("PARAM");
+        e->setAttribute ("id", id);
+        e->setAttribute ("value", value);
+    };
+    add ("exciter", exciter[m]);
+    add ("resonator", resonator[m]);
+
+    if (m >= 2)   // position used to be reed stiffness / jet length
+        if (auto* pos = xml.getChildByAttribute ("id", "position"))
+        {
+            add ("shape", pos->getDoubleAttribute ("value", 0.5));
+            pos->setAttribute ("value", 0.5);
+        }
+
+    xml.removeChildElement (model, true);
 }
 
 juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
