@@ -301,9 +301,13 @@ void FilamentEditor::paint (juce::Graphics& g)
     g.fillAll (kBackground);
 
     // header
+    // "ROBOTMAKERS FILAMENT", stacked to fit beside the preset bar
+    g.setColour (kText);
+    g.setFont (juce::FontOptions (15.5f, juce::Font::bold));
+    g.drawFittedText ("ROBOTMAKERS", 20, 9, 136, 18, juce::Justification::centredLeft, 1, 0.8f);
     g.setColour (lnf.accent);
     g.setFont (juce::FontOptions (26.0f, juce::Font::bold));
-    g.drawText ("FILAMENT", 20, 12, 200, 32, juce::Justification::centredLeft);
+    g.drawFittedText ("FILAMENT", 20, 25, 136, 30, juce::Justification::centredLeft, 1, 0.8f);
     g.setColour (kDim);
     g.setFont (juce::FontOptions (13.0f));
     g.drawText (modelDescription, 20, 62, getWidth() - 40, 18, juce::Justification::centredLeft);
