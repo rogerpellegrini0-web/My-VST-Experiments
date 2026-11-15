@@ -24,6 +24,13 @@ enum class Resonator : int
     Horn            = 4    // long flared tube, many close modes the lips select between (brass)
 };
 
+enum class VoiceMode : int
+{
+    Poly   = 0,
+    Mono   = 1,   // one voice, every note re-articulates (glides if Glide > 0)
+    Legato = 2    // one voice, overlapping notes slur without re-attacking
+};
+
 constexpr int kNumExciters   = 5;
 constexpr int kNumResonators = 5;
 
@@ -53,6 +60,17 @@ struct Params
     float vibratoDepth = 0.15f; // 0..1
     float bendRange    = 2.0f;  // semitones
     float velocitySens = 0.7f;  // 0..1
+
+    // Playing
+    VoiceMode voiceMode = VoiceMode::Poly;
+    float glide        = 0.0f;  // seconds (mono / legato)
+
+    // Expression (keyboard-friendly breath control)
+    float atToBreath     = 0.0f; // 0..1: how much aftertouch / breath CC controls the drive
+    float wheelToBreath  = 0.0f; // 0..1: same for the mod wheel
+    float wheelToVibrato = 1.0f; // 0..1
+    float exprCurve      = 0.0f; // -1..1: response curve (positive = more sensitive)
+    float growl          = 0.0f; // 0..1: throat growl on sustained exciters
 
     // Body / output
     float bodyMix     = 0.4f;   // 0..1

@@ -10,7 +10,15 @@
 namespace filament
 {
 
-// One polyphonic voice: an Exciter driving a Resonator through a scattering junction.
+// Per-voice modulation computed by the engine each block.
+struct VoiceMod
+{
+    float bendSemis  = 0.0f;
+    float wheel      = 0.0f;   // 0..1
+    float expression = 1.0f;   // drive multiplier from aftertouch / breath / wheel (0..1)
+};
+
+// One voice: an Exciter driving a Resonator through a scattering junction.
 // Exciter and resonator are latched at note-on.
 class Voice
 {
@@ -19,12 +27,14 @@ public:
 
     void start (int note, float velocity, const Params& p);
     void retrigger (float velocity, const Params& p);   // same note pressed again
+    void retriggerTo (int note, float velocity, const Params& p);  // mono: re-articulate at a new pitch
+    void legatoTo (int note);                           // mono: slur to a new pitch, no re-attack
     void release();                                     // note-off
     void steal (int note, float velocity);              // fade out quickly, then start note
     void reset();
 
     // Adds this voice's output to `out`.
-    void render (float* out, int numSamples, const Params& p, float bendSemis, float modWheel);
+    void render (float* out, int numSamples, const Params& p, const VoiceMod& mod);
 
     bool     isActive()   const noexcept { return active; }
     bool     isReleased() const noexcept { return !gate; }
@@ -38,7 +48,7 @@ private:
     static constexpr int kControlBlock = 32;
     static constexpr int kNumAllpass   = 4;
 
-    void updateControl (const Params& p, float bendSemis, float modWheel, int chunk);
+    void updateControl (const Params& p, const VoiceMod& mod, int chunk);
     void setupExciter (const Params& p, float f, float period);
     float setupResonator (const Params& p, float f, float w, float period);   // returns loop gain
     void buildPluckExcitation (float velocity, const Params& p);
@@ -52,6 +62,8 @@ private:
     Resonator resonator = Resonator::String;
     bool      twoSegment = true;
     int    note = 60;
+    float  pitch = 60.0f;     // sounding pitch (MIDI note number), glides towards `note`
+    bool   gliding = false;
     float  velocity = 0.8f, amp = 0.8f;
     bool   active = false, gate = false, firstControl = true;
     uint64_t startStamp = 0;
@@ -84,6 +96,9 @@ private:
     int   exLen = 0, exPos = 0;
     float env = 0.0f, attackInc = 0.001f, releaseCoef = 0.999f;
     float maxDrive  = 0.0f;   // bow velocity / breath pressure target
+    float drive = 0.0f, driveStep = 0.0f;       // smoothed drive incl. expression
+    float expr = 1.0f;                          // smoothed expression
+    float growl = 0.0f, growlStep = 0.0f, growlPhase = 0.0f, growlWalk = 0.0f;
     float noiseGain = 0.0f;
     float shapeA = 0.0f;      // bow slope | reed slope | jet reflection
     float shapeB = 0.0f;      // bow stick threshold | reed offset

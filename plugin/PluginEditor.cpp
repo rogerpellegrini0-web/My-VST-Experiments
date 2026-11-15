@@ -111,7 +111,7 @@ FilamentEditor::FilamentEditor (FilamentProcessor& p)
         k->slider.setColour (juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
         k->slider.setColour (juce::Slider::textBoxBackgroundColourId, juce::Colours::transparentBlack);
         k->slider.setColour (juce::Slider::textBoxHighlightColourId, kDim.withAlpha (0.4f));
-        k->label.setText (text, juce::dontSendNotification);
+        k->label.setText (juce::String::fromUTF8 (text), juce::dontSendNotification);
         k->label.setJustificationType (juce::Justification::centred);
         k->label.setFont (juce::FontOptions (13.0f, juce::Font::bold));
         addAndMakeVisible (k->slider);
@@ -125,10 +125,20 @@ FilamentEditor::FilamentEditor (FilamentProcessor& p)
                                          make ("noise", "Noise"), make ("attack", "Attack") }, {} });
     sections.push_back ({ "RESONATOR", { make ("position", "Position"), make ("decay", "Decay"), make ("damping", "Damping"),
                                          make ("stiffness", "Stiffness"), make ("release", "Release") }, {} });
-    sections.push_back ({ "MODULATION",{ make ("vibRate", "Vib Rate"), make ("vibDepth", "Vib Depth"),
-                                         make ("bendRange", "Bend"), make ("velSens", "Vel Sens") }, {} });
-    sections.push_back ({ "BODY / OUT",{ make ("bodyMix", "Body Mix"), make ("bodySize", "Body Size"),
-                                         make ("level", "Level") }, {} });
+    sections.push_back ({ "EXPRESSION", { make ("atBreath", "AT \xe2\x86\x92 Breath"), make ("wheelBreath", "Wheel \xe2\x86\x92 Breath"),
+                                          make ("exprCurve", "Curve"), make ("growl", "Growl"), make ("wheelVib", "Wheel \xe2\x86\x92 Vib") }, {} });
+    sections.push_back ({ "PLAY",       { make ("glide", "Glide"), make ("bendRange", "Bend"), make ("velSens", "Vel Sens") }, {} });
+    sections.back().extra = &modeBox;
+    sections.push_back ({ "VIBRATO",    { make ("vibRate", "Rate"), make ("vibDepth", "Depth") }, {} });
+    sections.push_back ({ "BODY / OUT", { make ("bodyMix", "Body Mix"), make ("bodySize", "Body Size"),
+                                          make ("level", "Level") }, {} });
+
+    modeBox.addItemList ({ "Poly", "Mono", "Legato" }, 1);
+    addAndMakeVisible (modeBox);
+    modeLabel.setFont (juce::FontOptions (13.0f, juce::Font::bold));
+    modeLabel.setJustificationType (juce::Justification::centred);
+    addAndMakeVisible (modeLabel);
+    modeAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment> (processor.apvts, "voiceMode", modeBox);
 
     exciterBox.addItemList (FilamentProcessor::exciterNames(), 1);
     resonatorBox.addItemList (FilamentProcessor::resonatorNames(), 1);
@@ -148,7 +158,7 @@ FilamentEditor::FilamentEditor (FilamentProcessor& p)
     keyboard.setColour (juce::MidiKeyboardComponent::keyDownOverlayColourId, lnf.accent.withAlpha (0.6f));
     addAndMakeVisible (keyboard);
 
-    setSize (900, 510);
+    setSize (900, 660);
     updateForModel();
     startTimerHz (15);
 }
@@ -171,7 +181,8 @@ void FilamentEditor::timerCallback()
 {
     const int e = (int) processor.apvts.getRawParameterValue ("exciter")->load();
     const int r = (int) processor.apvts.getRawParameterValue ("resonator")->load();
-    if (e != currentExciter || r != currentResonator) updateForModel();
+    const int m = (int) processor.apvts.getRawParameterValue ("voiceMode")->load();
+    if (e != currentExciter || r != currentResonator || m != currentMode) updateForModel();
 }
 
 void FilamentEditor::updateForModel()
@@ -197,6 +208,15 @@ void FilamentEditor::updateForModel()
     const bool drivenTube = currentExciter != 0 && currentResonator != 0;
     setLabel ("position", positionLabel (currentExciter, currentResonator));
     setLabel ("decay", drivenTube ? "Resonance" : "Decay");
+
+    // breath expression and growl only act on sustained exciters; glide only in mono modes
+    currentMode = (int) processor.apvts.getRawParameterValue ("voiceMode")->load();
+    const bool sustained = currentExciter != 0;
+    setLabel ("atBreath",    sustained ? juce::String::fromUTF8 ("AT \xe2\x86\x92 Breath") : juce::String());
+    setLabel ("wheelBreath", sustained ? juce::String::fromUTF8 ("Wheel \xe2\x86\x92 Breath") : juce::String());
+    setLabel ("exprCurve",   sustained ? juce::String ("Curve") : juce::String());
+    setLabel ("growl",       sustained ? juce::String ("Growl") : juce::String());
+    setLabel ("glide",       currentMode != 0 ? juce::String ("Glide") : juce::String());
     repaint();
 }
 
@@ -240,25 +260,35 @@ void FilamentEditor::resized()
     area.removeFromBottom (78);
 
     const int gap = 10;
-    auto row1 = area.removeFromTop ((area.getHeight() - gap) / 2);
+    const int rowH = (area.getHeight() - 2 * gap) / 3;
+    auto row1 = area.removeFromTop (rowH);
     area.removeFromTop (gap);
-    auto row2 = area;
+    auto row2 = area.removeFromTop (rowH);
+    area.removeFromTop (gap);
+    auto row3 = area;
 
     auto layoutRow = [gap] (juce::Rectangle<int> row, Section& a, Section& b)
     {
-        const int total = (int) (a.knobs.size() + b.knobs.size());
-        const int wA = (row.getWidth() - gap) * (int) a.knobs.size() / total;
+        const int total = a.cells() + b.cells();
+        const int wA = (row.getWidth() - gap) * a.cells() / total;
         a.bounds = row.removeFromLeft (wA);
         row.removeFromLeft (gap);
         b.bounds = row;
     };
     layoutRow (row1, sections[0], sections[1]);
     layoutRow (row2, sections[2], sections[3]);
+    layoutRow (row3, sections[4], sections[5]);
 
     for (auto& s : sections)
     {
         auto inner = s.bounds.reduced (8).withTrimmedTop (16);
-        const int w = inner.getWidth() / (int) s.knobs.size();
+        const int w = inner.getWidth() / s.cells();
+        if (s.extra != nullptr)
+        {
+            auto cell = inner.removeFromLeft (w);
+            modeLabel.setBounds (cell.removeFromTop (18));
+            s.extra->setBounds (cell.withSizeKeepingCentre (cell.getWidth() - 12, 28).translated (0, -10));
+        }
         for (auto* k : s.knobs)
         {
             auto cell = inner.removeFromLeft (w);

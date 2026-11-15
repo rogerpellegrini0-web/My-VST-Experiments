@@ -253,6 +253,86 @@ int main (int argc, char** argv)
         std::printf ("%-6s finite %s  peak %.3f\n", kExcNames[e], finite ? "yes" : "NO", pk);
     }
 
+    // ---------------------------------------------------------------- playing modes
+    std::printf ("\n== Mono / legato / glide / expression ==\n");
+    {
+        const double fs = 48000.0;
+        auto pitchAt = [&] (const std::vector<float>& x, double t) {
+            return 1200.0 * std::log2 (estimatePitch (x.data() + (int) (t * fs), (int) (0.12 * fs), fs) / 220.0);   // cents re A3
+        };
+        auto rmsAt = [&] (const std::vector<float>& x, double t0, double t1) {
+            double r = 0; for (int i = (int) (t0 * fs); i < (int) (t1 * fs); ++i) r += (double) x[(size_t) i] * x[(size_t) i];
+            return std::sqrt (r / ((t1 - t0) * fs));
+        };
+        auto check = [&] (bool ok, const char* what) { if (! ok) ++failures; std::printf ("  %-58s %s\n", what, ok ? "ok" : "FAIL"); };
+
+        // Script: A3 at 0 s, C4 at 0.6 s (overlapping), release C4 at 1.2 s, release A3 at 1.8 s.
+        auto run = [&] (Params p, std::vector<float>& L, int& maxVoices, float pressure = -1.0f) {
+            Engine eng; eng.prepare (fs, 512); eng.setParams (p);
+            const int total = (int) (2.4 * fs);
+            L.assign ((size_t) total, 0.0f); std::vector<float> R ((size_t) total);
+            maxVoices = 0;
+            if (pressure >= 0.0f) eng.setChannelPressure (pressure);
+            for (int pos = 0; pos < total; pos += 256)
+            {
+                const double t = pos / fs;
+                auto at = [&] (double when) { return when >= t && when < t + 256 / fs; };
+                if (at (0.0)) eng.noteOn (57, 0.8f);
+                if (at (0.6)) eng.noteOn (60, 0.8f);
+                if (at (1.2)) eng.noteOff (60);
+                if (at (1.8)) eng.noteOff (57);
+                eng.render (L.data() + pos, R.data() + pos, std::min (256, total - pos));
+                maxVoices = std::max (maxVoices, eng.activeVoiceCount());
+            }
+        };
+
+        std::vector<float> L; int mv = 0;
+        Params p = comboParams (2, 1);                 // reed / cylindrical
+        p.vibratoDepth = 0; p.bodyMix = 0; p.attack = 0.05f;
+
+        p.voiceMode = VoiceMode::Legato; run (p, L, mv);
+        check (mv == 1, "legato: a single voice");
+        check (std::fabs (pitchAt (L, 0.40)) < 10.0, "legato: first note A3");
+        check (std::fabs (pitchAt (L, 0.95) - 300.0) < 10.0, "legato: slurs to C4");
+        check (std::fabs (pitchAt (L, 1.50)) < 10.0, "legato: returns to held A3 on release");
+        // no re-attack: level around the slur stays close to the sustained level
+        check (rmsAt (L, 0.60, 0.65) > 0.5 * rmsAt (L, 0.45, 0.55), "legato: no gap / re-attack at the slur");
+
+        p.glide = 0.3f; run (p, L, mv);
+        const double mid = pitchAt (L, 0.66);
+        check (mid > 30.0 && mid < 270.0, "glide 0.3 s: pitch is between the notes after 60 ms");
+        check (std::fabs (pitchAt (L, 1.05) - 300.0) < 12.0, "glide 0.3 s: arrives at C4");
+
+        p.glide = 0.0f; p.voiceMode = VoiceMode::Poly; run (p, L, mv);
+        check (mv == 2, "poly: two voices for overlapping notes");
+
+        // Aftertouch as breath: fully assigned, no pressure -> silent; full pressure -> sounds
+        p.voiceMode = VoiceMode::Mono; p.atToBreath = 1.0f;
+        run (p, L, mv, 0.0f);
+        check (rmsAt (L, 0.3, 0.5) < 1e-3, "AT->Breath 100%, no pressure: silent");
+        run (p, L, mv, 1.0f);
+        check (rmsAt (L, 0.3, 0.5) > 0.03, "AT->Breath 100%, full pressure: sounds");
+        run (p, L, mv, 0.7f);
+        const double partial = rmsAt (L, 0.3, 0.5);
+        run (p, L, mv, 1.0f);
+        check (partial < rmsAt (L, 0.3, 0.5), "AT->Breath: more pressure, more sound");
+
+        // Growl stays stable on every sustained exciter
+        p.atToBreath = 0.0f; p.growl = 1.0f;
+        bool ok = true;
+        for (int e = 1; e < kNumExciters; ++e) for (int r = 0; r < kNumResonators; ++r)
+        { p.exciter = (Exciter) e; p.resonator = (Resonator) r; run (p, L, mv); ok = ok && allFinite (L) && rmsAt (L, 0.3, 0.5) > 1e-3; }
+        check (ok, "growl 100%: all sustained pairings finite and sounding");
+
+        // Mono pluck re-plucks; legato pluck is a hammer-on (no new burst)
+        p = comboParams (0, 0); p.vibratoDepth = 0; p.bodyMix = 0; p.voiceMode = VoiceMode::Mono;
+        run (p, L, mv);
+        const double monoLevel = rmsAt (L, 0.60, 0.65);
+        p.voiceMode = VoiceMode::Legato; run (p, L, mv);
+        check (std::fabs (pitchAt (L, 0.75) - 300.0) < 10.0, "legato pluck: hammer-on changes pitch");
+        check (rmsAt (L, 0.60, 0.65) < monoLevel, "legato pluck: softer than a re-pluck");
+    }
+
     // ---------------------------------------------------------------- demos
     std::printf ("\n== Writing demo WAVs to %s ==\n", outDir.c_str());
     struct Demo { const char* name; int e, r; float attack, vib, body; };

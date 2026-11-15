@@ -68,6 +68,13 @@ private:
         std::atomic<float>* vibDepth {};
         std::atomic<float>* bendRange {};
         std::atomic<float>* velSens {};
+        std::atomic<float>* voiceMode {};
+        std::atomic<float>* glide {};
+        std::atomic<float>* atBreath {};
+        std::atomic<float>* wheelBreath {};
+        std::atomic<float>* wheelVib {};
+        std::atomic<float>* exprCurve {};
+        std::atomic<float>* growl {};
         std::atomic<float>* bodyMix {};
         std::atomic<float>* bodySize {};
         std::atomic<float>* level {};

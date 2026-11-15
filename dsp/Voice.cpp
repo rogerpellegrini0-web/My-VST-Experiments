@@ -87,10 +87,14 @@ void Voice::start (int newNote, float vel, const Params& p)
     resonator  = p.resonator;
     twoSegment = isTwoSegment (resonator);
     note     = newNote;
+    pitch    = (float) newNote;
     velocity = vel;
     amp      = velocityToAmp (vel, p);
     active = gate = true;
     firstControl = true;
+    expr = 1.0f;
+    drive = driveStep = 0.0f;
+    growl = growlStep = growlPhase = growlWalk = 0.0f;
     samplesSinceStart = 0;
     vibPhase = 0.0f;
 
@@ -113,6 +117,20 @@ void Voice::retrigger (float vel, const Params& p)
     gate = true;
     if (exciter == Exciter::Pluck)
         buildPluckExcitation (vel, p);   // re-pluck on top of the still-ringing resonator
+}
+
+void Voice::retriggerTo (int newNote, float vel, const Params& p)
+{
+    note = newNote;          // pitch glides there (or jumps when Glide is 0)
+    retrigger (vel, p);
+}
+
+void Voice::legatoTo (int newNote)
+{
+    // Slur: the resonator keeps vibrating and the exciter keeps going; only the length
+    // changes. On a plucked string this is a hammer-on / pull-off.
+    note = newNote;
+    gate = true;
 }
 
 void Voice::release() { gate = false; }
@@ -247,7 +265,7 @@ float Voice::setupResonator (const Params& p, float f, float w, float period)
         case Resonator::String:          pole = passive ? knob3 (p.damping, 0.02f, 0.3f, 0.8f)
                                                         : knob3 (p.damping, 0.3f, 0.6f, 0.88f); break;
         case Resonator::CylindricalTube: pole = knob3 (p.damping, 0.05f, 0.3f, 0.75f); break;
-        case Resonator::ConicalTube:     pole = knob3 (p.damping, 0.05f, 0.3f, 0.75f); break;
+        case Resonator::ConicalTube:     pole = knob3 (p.damping, 0.05f, 0.42f, 0.8f); break;
         case Resonator::OpenTube:        pole = knob3 (p.damping, 0.4f, 0.65f, 0.85f); break;
         case Resonator::Horn:            pole = knob3 (p.damping, 0.05f, 0.2f, 0.7f);  break;
     }
@@ -350,17 +368,25 @@ float Voice::setupResonator (const Params& p, float f, float w, float period)
     return g;
 }
 
-void Voice::updateControl (const Params& p, float bendSemis, float modWheel, int chunk)
+void Voice::updateControl (const Params& p, const VoiceMod& mod, int chunk)
 {
     const float t = (float) ((double) samplesSinceStart / fs);
 
+    // Glide (portamento) towards the target note: exponential, ~95% after `glide` seconds.
+    if (pitch != (float) note)
+    {
+        const float tau = std::max (0.0005f, p.glide / 3.0f);
+        pitch += ((float) note - pitch) * (1.0f - std::exp (-(float) chunk / (tau * (float) fs)));
+        if (std::fabs ((float) note - pitch) < 0.001f) pitch = (float) note;
+    }
+
     // Vibrato: fades in after the attack, mod wheel adds depth.
     const float onset = clampf ((t - 0.15f) / 0.45f, 0.0f, 1.0f);
-    const float depth = p.vibratoDepth * p.vibratoDepth * 0.5f + modWheel * 0.4f;   // semitones
+    const float depth = p.vibratoDepth * p.vibratoDepth * 0.5f + mod.wheel * p.wheelToVibrato * 0.4f;   // semitones
     vibPhase += kTwoPi * p.vibratoRate * (float) chunk / (float) fs;
     if (vibPhase > kTwoPi) vibPhase -= kTwoPi;
 
-    const float semis = (float) note - 69.0f + bendSemis + depth * onset * std::sin (vibPhase);
+    const float semis = pitch - 69.0f + mod.bendSemis + depth * onset * std::sin (vibPhase);
     const float f     = clampf (noteToHz (semis), 20.0f, (float) fs / 8.0f);
     const float w     = kTwoPi * f / (float) fs;
     float period      = (float) fs / f;
@@ -392,6 +418,11 @@ void Voice::updateControl (const Params& p, float bendSemis, float modWheel, int
                           + kResonatorOffset[(int) resonator];
         boreScale = std::exp2 (cents / 1200.0f);
     }
+    else if (exciter == Exciter::Reed && resonator == Resonator::ConicalTube)
+    {
+        // The reed sharpens the cone's top register (measured: ~ 8.5 cents x (f / 1 kHz)^2).
+        boreScale = std::exp2 (8.5f * (f / 1000.0f) * (f / 1000.0f) / 1200.0f);
+    }
     period *= boreScale;
 
     attackInc   = 1.0f / (float) (std::max (0.001f, p.attack) * fs);
@@ -400,15 +431,31 @@ void Voice::updateControl (const Params& p, float bendSemis, float modWheel, int
     setupExciter (p, f, period);
     const float targetGain = setupResonator (p, f, w, period);
 
+    // Expression (aftertouch / breath / wheel) scales the drive of sustained exciters,
+    // smoothed (~8 ms) so stepped MIDI values don't zipper.
+    expr += (clampf (mod.expression, 0.0f, 1.5f) - expr) * (1.0f - std::exp (-(float) chunk / (0.008f * (float) fs)));
+    const float targetDrive = maxDrive * expr;
+
+    // Growl: an irregular ~25-40 Hz throat flutter on the drive.
+    growlWalk = clampf (growlWalk + 0.08f * noise.next(), -1.0f, 1.0f);
+    growlPhase += kTwoPi * 32.0f * (1.0f + 0.25f * growlWalk) * (float) chunk / (float) fs;
+    if (growlPhase > kTwoPi) growlPhase -= kTwoPi;
+    const float targetGrowl = p.growl * 0.6f * (std::sin (growlPhase) + 0.3f * noise.next());
+
     if (firstControl)
     {
         loopGain = targetGain;
         loopGainStep = 0.0f;
+        drive = targetDrive; driveStep = 0.0f;
+        growl = targetGrowl; growlStep = 0.0f;
         firstControl = false;
     }
     else
     {
-        loopGainStep = (targetGain - loopGain) / (float) chunk;
+        const float inv = 1.0f / (float) chunk;
+        loopGainStep = (targetGain - loopGain) * inv;
+        driveStep    = (targetDrive - drive) * inv;
+        growlStep    = (targetGrowl - growl) * inv;
     }
 
     // per-sample steps were computed for a full control block
@@ -430,7 +477,7 @@ float Voice::excite (float x) noexcept
         case Exciter::Bow:
         {
             const float e      = envTick();
-            const float bowVel = maxDrive * e * (1.0f + noiseGain * noise.next());
+            const float bowVel = drive * (1.0f + growl) * e * (1.0f + noiseGain * noise.next());
             const float dv     = bowVel - x;
             // STK-style friction curve: sticks (reflection 1) at small relative velocity.
             const float tt = std::fabs (dv * shapeA) + shapeB;
@@ -443,7 +490,7 @@ float Voice::excite (float x) noexcept
         case Exciter::Reed:
         {
             const float e = envTick();
-            float breath  = maxDrive * e;
+            float breath  = drive * (1.0f + growl) * e;
             breath += breath * noiseGain * noise.next();
             const float pdiff = x - breath;
             const float reed  = clampf (shapeB + shapeA * pdiff, -1.0f, 1.0f);
@@ -453,7 +500,7 @@ float Voice::excite (float x) noexcept
         case Exciter::Lips:
         {
             const float e = envTick();
-            float pm = maxDrive * e;
+            float pm = drive * (1.0f + growl) * e;
             pm += pm * noiseGain * noise.next();
             // Solve the flow exactly for this sample: with opening h, pressure drop dp and
             // injected wave d = h*sqrt|dp|, dp = q - d where q = pm - (pressure from the bore).
@@ -472,7 +519,7 @@ float Voice::excite (float x) noexcept
         case Exciter::Jet:
         {
             const float e = envTick();
-            float breath  = maxDrive * e;
+            float breath  = drive * (1.0f + growl) * e;
             breath += breath * noiseGain * noise.next();
             dJ += dJStep;
             // a two-segment resonator passes the injection both ways: halve the coupling
@@ -492,6 +539,7 @@ void Voice::renderSamples (float* out, int n) noexcept
     for (int i = 0; i < n; ++i)
     {
         dA += dAStep; dB += dBStep; loopGain += loopGainStep;
+        drive += driveStep; growl += growlStep;
 
         // 1. wave arriving at the excitation point
         const float rawFar = dlA.read (dA);
@@ -538,7 +586,7 @@ void Voice::renderSamples (float* out, int n) noexcept
 }
 
 //==============================================================================
-void Voice::render (float* out, int numSamples, const Params& p, float bendSemis, float modWheel)
+void Voice::render (float* out, int numSamples, const Params& p, const VoiceMod& mod)
 {
     int done = 0;
     while (active && done < numSamples)
@@ -547,7 +595,7 @@ void Voice::render (float* out, int numSamples, const Params& p, float bendSemis
             start (pendingNote, pendingVelocity, p);   // clears `stealing`
 
         const int chunk = std::min (kControlBlock, numSamples - done);
-        updateControl (p, bendSemis, modWheel, chunk);
+        updateControl (p, mod, chunk);
 
         float tmp[kControlBlock];
         renderSamples (tmp, chunk);

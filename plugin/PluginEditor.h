@@ -34,6 +34,8 @@ private:
         juce::String title;
         std::vector<Knob*> knobs;
         juce::Rectangle<int> bounds;
+        juce::Component* extra = nullptr;   // optional non-knob control in the first cell
+        int cells() const { return (int) knobs.size() + (extra != nullptr ? 1 : 0); }
     };
 
     void timerCallback() override;
@@ -49,9 +51,12 @@ private:
     juce::ComboBox exciterBox, resonatorBox;
     juce::Label exciterLabel { {}, "EXCITER" }, resonatorLabel { {}, "RESONATOR" };
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> exciterAttachment, resonatorAttachment;
+    juce::ComboBox modeBox;
+    juce::Label modeLabel { {}, "Mode" };
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> modeAttachment;
     juce::MidiKeyboardComponent keyboard;
 
-    int currentExciter = -1, currentResonator = -1;
+    int currentExciter = -1, currentResonator = -1, currentMode = -1;
     juce::String modelDescription;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (FilamentEditor)

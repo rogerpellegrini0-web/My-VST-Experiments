@@ -70,6 +70,20 @@ juce::AudioProcessorValueTreeState::ParameterLayout FilamentProcessor::createLay
     l.add (std::make_unique<APF> (id ("bendRange"), "Bend Range",    juce::NormalisableRange<float> (0, 24, 1), 2.0f, withSuffix (" st", 0)));
     l.add (std::make_unique<APF> (id ("velSens"),   "Velocity Sens", juce::NormalisableRange<float> (0, 1), 0.7f, percent()));
 
+    l.add (std::make_unique<juce::AudioParameterChoice> (id ("voiceMode"), "Voice Mode", juce::StringArray { "Poly", "Mono", "Legato" }, 0));
+    l.add (std::make_unique<APF> (id ("glide"),     "Glide",     skewed (0.0f, 2.0f, 0.25f), 0.0f, seconds()));
+
+    l.add (std::make_unique<APF> (id ("atBreath"),    "AT to Breath",    juce::NormalisableRange<float> (0, 1), 0.0f, percent()));
+    l.add (std::make_unique<APF> (id ("wheelBreath"), "Wheel to Breath", juce::NormalisableRange<float> (0, 1), 0.0f, percent()));
+    l.add (std::make_unique<APF> (id ("wheelVib"),    "Wheel to Vibrato",juce::NormalisableRange<float> (0, 1), 1.0f, percent()));
+    l.add (std::make_unique<APF> (id ("exprCurve"),   "Expression Curve",juce::NormalisableRange<float> (-1, 1), 0.0f,
+                                  juce::AudioParameterFloatAttributes().withStringFromValueFunction ([] (float v, int)
+                                  {
+                                      if (std::abs (v) < 0.02f) return juce::String ("Linear");
+                                      return (v > 0 ? juce::String ("Light ") : juce::String ("Firm ")) + juce::String (juce::roundToInt (std::abs (v) * 100.0f));
+                                  })));
+    l.add (std::make_unique<APF> (id ("growl"),       "Growl",           juce::NormalisableRange<float> (0, 1), 0.0f, percent()));
+
     l.add (std::make_unique<APF> (id ("bodyMix"),   "Body Mix",  juce::NormalisableRange<float> (0, 1), 0.4f, percent()));
     l.add (std::make_unique<APF> (id ("bodySize"),  "Body Size", juce::NormalisableRange<float> (0, 1), 0.5f, percent()));
     l.add (std::make_unique<APF> (id ("level"),     "Level",     juce::NormalisableRange<float> (-36.0f, 6.0f), -6.0f, withSuffix (" dB", 1)));
@@ -97,6 +111,13 @@ FilamentProcessor::FilamentProcessor()
     raw.vibDepth  = p ("vibDepth");
     raw.bendRange = p ("bendRange");
     raw.velSens   = p ("velSens");
+    raw.voiceMode = p ("voiceMode");
+    raw.glide     = p ("glide");
+    raw.atBreath  = p ("atBreath");
+    raw.wheelBreath = p ("wheelBreath");
+    raw.wheelVib  = p ("wheelVib");
+    raw.exprCurve = p ("exprCurve");
+    raw.growl     = p ("growl");
     raw.bodyMix   = p ("bodyMix");
     raw.bodySize  = p ("bodySize");
     raw.level     = p ("level");
@@ -136,6 +157,13 @@ filament::Params FilamentProcessor::readParams() const
     p.vibratoDepth = raw.vibDepth->load();
     p.bendRange    = raw.bendRange->load();
     p.velocitySens = raw.velSens->load();
+    p.voiceMode    = (filament::VoiceMode) juce::jlimit (0, 2, (int) raw.voiceMode->load());
+    p.glide        = raw.glide->load();
+    p.atToBreath   = raw.atBreath->load();
+    p.wheelToBreath  = raw.wheelBreath->load();
+    p.wheelToVibrato = raw.wheelVib->load();
+    p.exprCurve    = raw.exprCurve->load();
+    p.growl        = raw.growl->load();
     p.bodyMix      = raw.bodyMix->load();
     p.bodySize     = raw.bodySize->load();
     p.levelDb      = raw.level->load();
@@ -150,6 +178,9 @@ void FilamentProcessor::handleMidi (const juce::MidiMessage& m)
     else if (m.isSustainPedalOn())      engine.setSustain (true);
     else if (m.isSustainPedalOff())     engine.setSustain (false);
     else if (m.isControllerOfType (1)) engine.setModWheel ((float) m.getControllerValue() / 127.0f);
+    else if (m.isControllerOfType (2)) engine.setBreath ((float) m.getControllerValue() / 127.0f);
+    else if (m.isChannelPressure())     engine.setChannelPressure ((float) m.getChannelPressureValue() / 127.0f);
+    else if (m.isAftertouch())          engine.setPolyPressure (m.getNoteNumber(), (float) m.getAfterTouchValue() / 127.0f);
     else if (m.isAllNotesOff())         engine.allNotesOff();
     else if (m.isAllSoundOff())         engine.reset();
 }

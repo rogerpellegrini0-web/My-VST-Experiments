@@ -89,9 +89,82 @@ void Engine::reset()
     for (auto& v : voices) v.reset();
     sustained.fill (false);
     sustainDown = false;
+    numHeld = 0;
+    monoReleasePending = false;
+    polyPressure.fill (0.0f);
     body.reset();
     dcL.reset(); dcR.reset();
     gain = std::pow (10.0f, params.levelDb / 20.0f);
+}
+
+void Engine::setParams (const Params& p) noexcept
+{
+    if (p.voiceMode != params.voiceMode)
+    {
+        // switching between poly and mono: let everything ring out and start clean
+        for (auto& v : voices)
+            if (v.isActive()) v.release();
+        numHeld = 0;
+        monoReleasePending = false;
+        sustained.fill (false);
+    }
+    params = p;
+}
+
+float Engine::expressionFor (int note) const noexcept
+{
+    // Aftertouch-like sources: channel pressure, poly pressure of this key, breath CC.
+    float src = std::max (channelPressure, breath);
+    if (note >= 0 && note < 128) src = std::max (src, polyPressure[(size_t) note]);
+
+    const float exponent = std::exp2 (-1.5f * clampf (params.exprCurve, -1.0f, 1.0f));
+    auto curve = [exponent] (float x) { return std::pow (clampf (x, 0.0f, 1.0f), exponent); };
+
+    // Each amount blends from "fixed full drive" (0) to "drive follows the controller" (1).
+    const float a = clampf (params.atToBreath, 0.0f, 1.0f);
+    const float w = clampf (params.wheelToBreath, 0.0f, 1.0f);
+    return (1.0f - a + a * curve (src)) * (1.0f - w + w * curve (modWheel));
+}
+
+void Engine::monoRemove (int note)
+{
+    int j = 0;
+    for (int i = 0; i < numHeld; ++i)
+        if (held[(size_t) i] != note) held[(size_t) j++] = held[(size_t) i];
+    numHeld = j;
+}
+
+void Engine::monoNoteOn (int note, float velocity)
+{
+    Voice& v = voices[0];
+    const bool overlapping = numHeld > 0;
+    monoRemove (note);
+    if (numHeld == (int) held.size()) monoRemove (held[0]);
+    held[(size_t) numHeld++] = note;
+    monoReleasePending = false;
+
+    if (! v.isActive() || v.isStealing())
+        v.start (note, velocity, params);
+    else if (params.voiceMode == VoiceMode::Legato && overlapping && ! v.isReleased())
+        v.legatoTo (note);
+    else
+        v.retriggerTo (note, velocity, params);
+    v.setStamp (++stamp);
+}
+
+void Engine::monoNoteOff (int note)
+{
+    const bool wasSounding = numHeld > 0 && held[(size_t) numHeld - 1] == note;
+    monoRemove (note);
+    if (! wasSounding) return;
+
+    Voice& v = voices[0];
+    if (numHeld > 0)
+        v.legatoTo (held[(size_t) numHeld - 1]);   // fall back to the key still held
+    else if (sustainDown)
+        monoReleasePending = true;
+    else
+        v.release();
 }
 
 void Engine::noteOn (int note, float velocity)
@@ -99,6 +172,9 @@ void Engine::noteOn (int note, float velocity)
     if (note < 0 || note > 127) return;
     if (velocity <= 0.0f) { noteOff (note); return; }
     sustained[(size_t) note] = false;
+    polyPressure[(size_t) note] = 0.0f;
+
+    if (params.voiceMode != VoiceMode::Poly) { monoNoteOn (note, velocity); return; }
 
     // Same note still sounding: re-excite that voice (keeps the string/bore state).
     for (auto& v : voices)
@@ -135,6 +211,7 @@ void Engine::noteOn (int note, float velocity)
 void Engine::noteOff (int note)
 {
     if (note < 0 || note > 127) return;
+    if (params.voiceMode != VoiceMode::Poly) { monoNoteOff (note); return; }
     if (sustainDown) { sustained[(size_t) note] = true; return; }
     for (auto& v : voices)
         if (v.isActive() && ! v.isStealing() && v.getNote() == note && ! v.isReleased())
@@ -144,6 +221,11 @@ void Engine::noteOff (int note)
 void Engine::setSustain (bool down)
 {
     sustainDown = down;
+    if (! down && monoReleasePending)
+    {
+        monoReleasePending = false;
+        if (numHeld == 0) voices[0].release();
+    }
     if (! down)
         for (int n = 0; n < 128; ++n)
             if (sustained[(size_t) n]) { sustained[(size_t) n] = false; noteOff (n); }
@@ -152,6 +234,8 @@ void Engine::setSustain (bool down)
 void Engine::allNotesOff()
 {
     sustainDown = false;
+    numHeld = 0;
+    monoReleasePending = false;
     sustained.fill (false);
     for (auto& v : voices)
         if (v.isActive()) v.release();
@@ -169,10 +253,15 @@ void Engine::render (float* left, float* right, int numSamples)
     if ((int) mono.size() < numSamples) mono.resize ((size_t) numSamples);   // only if host lied about block size
     std::fill (mono.begin(), mono.begin() + numSamples, 0.0f);
 
-    const float bendSemis = bend * params.bendRange;
+    VoiceMod mod;
+    mod.bendSemis = bend * params.bendRange;
+    mod.wheel     = modWheel;
     for (auto& v : voices)
         if (v.isActive())
-            v.render (mono.data(), numSamples, params, bendSemis, modWheel);
+        {
+            mod.expression = expressionFor (v.getNote());
+            v.render (mono.data(), numSamples, params, mod);
+        }
 
     body.setSize (params.bodySize);
     body.process (mono.data(), left, right, numSamples, clampf (params.bodyMix, 0.0f, 1.0f));

@@ -37,7 +37,32 @@ All pairings share these stages:
 - velocity response
 - a soft-clipping output stage
 
-MIDI: notes, velocity, pitch bend (range adjustable), mod wheel (adds vibrato) and the sustain pedal.
+## Playing it from a keyboard
+
+- **Mode:** *Poly* (16 voices), *Mono* (one voice, every note re-articulates) or
+  *Legato* (one voice; overlapping notes slur without a new attack, so the string
+  or air column keeps vibrating and only its length changes). In Mono and Legato the
+  last note pressed sounds, and releasing it falls back to a key still held.
+  A legato *pluck* is a hammer-on / pull-off.
+- **Glide:** portamento time in Mono and Legato.
+- **AT → Breath:** how much aftertouch (channel or polyphonic) controls the drive of
+  the sustained exciters: breath for reed, lips and jet, bow speed for the bow.
+  At 0 % the drive is fixed. At 100 % you play the dynamics entirely with key
+  pressure, starting from silence, as with a wind controller. Values in between
+  let velocity start the note and pressure swell it. A breath controller (CC2)
+  works the same way.
+- **Wheel → Breath / Wheel → Vib:** the same for the mod wheel, plus how much the
+  wheel adds vibrato.
+- **Curve:** response of those controllers, from *Firm* (needs more pressure) to
+  *Light* (responds to a light touch).
+- **Growl:** an irregular 25–40 Hz throat flutter on the breath or bow, from a subtle
+  edge to a full growl.
+
+Driving a model harder doesn't just make it louder. It changes the physics: brass
+gets brassier, reeds buzz, the bow digs in, and past a point reeds choke and
+flutes overblow, as the real instruments do.
+
+Other MIDI: pitch bend (range adjustable) and the sustain pedal.
 
 Tuning is computed rather than approximated. Each loop's length is the note's period minus
 the phase delay of every filter inside the loop. Where a nonlinear exciter pulls the pitch
