@@ -126,12 +126,12 @@ FilamentEditor::FilamentEditor (FilamentProcessor& p)
     sections.push_back ({ "EXCITER",   { make ("tone", "Tone"), make ("shape", "Shape"), make ("pressure", "Pressure"),
                                          make ("noise", "Noise"), make ("attack", "Attack") }, {} });
     sections.push_back ({ "RESONATOR", { make ("position", "Position"), make ("decay", "Decay"), make ("damping", "Damping"),
-                                         make ("stiffness", "Stiffness"), make ("release", "Release") }, {} });
+                                         make ("stiffness", "Stiffness"), make ("buzz", "Buzz"), make ("release", "Release") }, {} });
     sections.push_back ({ "EXPRESSION", { make ("atBreath", "AT \xe2\x86\x92 Breath"), make ("wheelBreath", "Wheel \xe2\x86\x92 Breath"),
                                           make ("exprCurve", "Curve"), make ("growl", "Growl"), make ("atStrange", "AT \xe2\x86\x92 Strange"),
                                           make ("wheelVib", "Wheel \xe2\x86\x92 Vib") }, {} });
     sections.push_back ({ "PLAY",       { make ("glide", "Glide"), make ("bendRange", "Bend"), make ("velSens", "Vel Sens") }, {} });
-    sections.back().extra = &modeBox;
+    sections.back().extras = { { &modeLabel, &modeBox } };
     sections.push_back ({ "VIBRATO",    { make ("vibRate", "Rate"), make ("vibDepth", "Depth") }, {} });
     sections.push_back ({ "STRANGE",    { make ("strange", "Strange") }, {} });
     {
@@ -139,6 +139,21 @@ FilamentEditor::FilamentEditor (FilamentProcessor& p)
         k.slider.getProperties().set ("accent", (int) kStrangeAccent.getARGB());
         k.label.setColour (juce::Label::textColourId, kStrangeAccent);
     }
+    sections.push_back ({ "SYMPATHETIC", { make ("symMix", "Mix"), make ("symDecay", "Decay") }, {} });
+    sections.back().extras = { { &symKeyLabel, &symKeyBox }, { &symTuningLabel, &symTuningBox } };
+    symKeyBox.addItemList ({ "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B" }, 1);
+    symTuningBox.addItemList ({ "Chromatic", "Drone", "Major", "Minor", "Pentatonic" }, 1);
+    for (auto* l : { &symKeyLabel, &symTuningLabel })
+    {
+        l->setFont (juce::FontOptions (13.0f, juce::Font::bold));
+        l->setJustificationType (juce::Justification::centred);
+        addAndMakeVisible (*l);
+    }
+    addAndMakeVisible (symKeyBox);
+    addAndMakeVisible (symTuningBox);
+    symKeyAttachment    = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment> (processor.apvts, "symKey", symKeyBox);
+    symTuningAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment> (processor.apvts, "symTuning", symTuningBox);
+
     sections.push_back ({ "BODY / OUT", { make ("bodyMix", "Body Mix"), make ("bodySize", "Body Size"),
                                           make ("level", "Level") }, {} });
 
@@ -350,17 +365,17 @@ void FilamentEditor::resized()
     };
     layoutRow (row1, { &sections[0], &sections[1] });
     layoutRow (row2, { &sections[2], &sections[3] });
-    layoutRow (row3, { &sections[4], &sections[5], &sections[6] });
+    layoutRow (row3, { &sections[4], &sections[5], &sections[6], &sections[7] });
 
     for (auto& s : sections)
     {
         auto inner = s.bounds.reduced (8).withTrimmedTop (16);
         const int w = inner.getWidth() / s.cells();
-        if (s.extra != nullptr)
+        for (auto& [label, comp] : s.extras)
         {
             auto cell = inner.removeFromLeft (w);
-            modeLabel.setBounds (cell.removeFromTop (18));
-            s.extra->setBounds (cell.withSizeKeepingCentre (cell.getWidth() - 12, 28).translated (0, -10));
+            label->setBounds (cell.removeFromTop (18));
+            comp->setBounds (cell.withSizeKeepingCentre (cell.getWidth() - 8, 28).translated (0, -10));
         }
         for (auto* k : s.knobs)
         {

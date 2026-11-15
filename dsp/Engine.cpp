@@ -71,6 +71,90 @@ void BodyResonator::process (const float* in, float* outL, float* outR, int n, f
 }
 
 //==============================================================================
+namespace
+{
+    // Semitones above the key (from C3) for each of the 12 strings.
+    constexpr int kSymTunings[SympatheticStrings::kNumTunings][SympatheticStrings::kStrings] = {
+        { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11 },          // chromatic
+        { 0, 7, 12, 19, 24, 31, 36, 0, 12, 24, 7, 19 },    // drone: tonic and fifth (doubles detuned)
+        { 0, 2, 4, 5, 7, 9, 11, 12, 14, 16, 17, 19 },      // major
+        { 0, 2, 3, 5, 7, 8, 10, 12, 14, 15, 17, 19 },      // natural minor
+        { 0, 2, 4, 7, 9, 12, 14, 16, 19, 21, 24, 26 },     // major pentatonic
+    };
+}
+
+void SympatheticStrings::prepare (double sampleRate)
+{
+    fs = sampleRate;
+    for (int i = 0; i < kStrings; ++i)
+    {
+        auto& s = strings[(size_t) i];
+        s.delay.setMaxDelay ((int) (fs / 40.0) + 16);       // lowest string is C3 - a few cents
+        // spread across the stereo field, alternating sides
+        const float pan = (i % 2 == 0 ? -1.0f : 1.0f) * (0.25f + 0.6f * (float) (i / 2) / (kStrings / 2));
+        s.panL = std::sqrt (0.5f * (1.0f - pan));
+        s.panR = std::sqrt (0.5f * (1.0f + pan));
+    }
+    key = tuning = -1;
+    reset();
+}
+
+void SympatheticStrings::reset()
+{
+    for (auto& s : strings) { s.delay.clear(); s.loss.reset(); }
+    silent = true;
+}
+
+void SympatheticStrings::configure (int newKey, int newTuning, float decaySeconds)
+{
+    newKey = std::min (11, std::max (0, newKey));
+    newTuning = std::min (kNumTunings - 1, std::max (0, newTuning));
+    if (newKey == key && newTuning == tuning && std::fabs (decaySeconds - decay) < 1e-3f) return;
+    key = newKey; tuning = newTuning; decay = decaySeconds;
+
+    for (int i = 0; i < kStrings; ++i)
+    {
+        auto& s = strings[(size_t) i];
+        const int  semis   = kSymTunings[tuning][i];
+        const bool doubled = i >= 7 && tuning == 1;                   // drone doubles: slightly detuned
+        const float midi   = 48.0f + (float) (key + semis) + (doubled ? 0.04f * (i % 2 == 0 ? 1.0f : -1.0f) : 0.0f);
+        const float f      = 440.0f * std::exp2 ((midi - 69.0f) / 12.0f);
+        const float w      = kTwoPi * f / (float) fs;
+        s.loss.p = poleForRate (0.25f, fs);
+        const float t60 = std::max (0.2f, decaySeconds) * std::sqrt (130.0f / f);   // higher strings ring shorter
+        s.length = std::max (2.0f, (float) fs / f - OnePoleLP::phaseDelay (s.loss.p, w));
+        s.gain   = std::min (0.9999f, std::pow (10.0f, -3.0f / (t60 * f))
+                                      / (OnePoleLP::magnitude (s.loss.p, w) * DelayLine::interpolationMagnitude (s.length, w)));
+    }
+}
+
+void SympatheticStrings::process (const float* in, float* outL, float* outR, int n, float mix)
+{
+    if (mix <= 0.0f)
+    {
+        if (! silent) reset();
+        return;
+    }
+    silent = false;
+    constexpr float coupling = 0.012f;             // how strongly the bridge drives the strings
+    const float outScale = 0.7f * mix;
+    for (int i = 0; i < n; ++i)
+    {
+        const float x = in[i] * coupling;
+        float l = 0.0f, r = 0.0f;
+        for (auto& s : strings)
+        {
+            const float y = s.gain * s.loss.process (s.delay.read (s.length));
+            s.delay.push (y + x);
+            l += y * s.panL;
+            r += y * s.panR;
+        }
+        outL[i] = l * outScale;
+        outR[i] = r * outScale;
+    }
+}
+
+//==============================================================================
 void Engine::prepare (double sampleRate, int maxBlockSize)
 {
     fs = sampleRate;
@@ -78,6 +162,9 @@ void Engine::prepare (double sampleRate, int maxBlockSize)
     for (auto& v : voices)
         v.prepare (fs, seed += 0x9E3779B9u);
     mono.assign ((size_t) std::max (1, maxBlockSize), 0.0f);
+    symL.assign (mono.size(), 0.0f);
+    symR.assign (mono.size(), 0.0f);
+    sympathetic.prepare (fs);
     body.prepare (fs);
     dcL.setup (fs, 12.0f);
     dcR.setup (fs, 12.0f);
@@ -92,6 +179,7 @@ void Engine::reset()
     numHeld = 0;
     monoReleasePending = false;
     polyPressure.fill (0.0f);
+    sympathetic.reset();
     body.reset();
     dcL.reset(); dcR.reset();
     gain = std::pow (10.0f, params.levelDb / 20.0f);
@@ -264,7 +352,10 @@ int Engine::activeVoiceCount() const noexcept
 
 void Engine::render (float* left, float* right, int numSamples)
 {
-    if ((int) mono.size() < numSamples) mono.resize ((size_t) numSamples);   // only if host lied about block size
+    if ((int) mono.size() < numSamples)   // only if the host lied about the block size
+    {
+        mono.resize ((size_t) numSamples); symL.resize ((size_t) numSamples); symR.resize ((size_t) numSamples);
+    }
     std::fill (mono.begin(), mono.begin() + numSamples, 0.0f);
 
     VoiceMod mod;
@@ -278,8 +369,25 @@ void Engine::render (float* left, float* right, int numSamples)
             v.render (mono.data(), numSamples, params, mod);
         }
 
+    // Sympathetic strings: driven by everything played; their sound goes through the body
+    // (mid) and is spread across the stereo field (side).
+    const float symMix = clampf (params.symMix, 0.0f, 1.0f);
+    sympathetic.configure (params.symKey, params.symTuning, params.symDecay);
+    sympathetic.process (mono.data(), symL.data(), symR.data(), numSamples, symMix);
+    if (symMix > 0.0f)
+        for (int i = 0; i < numSamples; ++i)
+            mono[(size_t) i] += 0.5f * (symL[(size_t) i] + symR[(size_t) i]);
+
     body.setSize (params.bodySize);
     body.process (mono.data(), left, right, numSamples, clampf (params.bodyMix, 0.0f, 1.0f));
+
+    if (symMix > 0.0f)
+        for (int i = 0; i < numSamples; ++i)
+        {
+            const float side = 0.5f * (symL[(size_t) i] - symR[(size_t) i]);
+            left[i] += side;
+            right[i] -= side;
+        }
 
     const float targetGain = std::pow (10.0f, params.levelDb / 20.0f);
     const float gStep = (targetGain - gain) / (float) numSamples;

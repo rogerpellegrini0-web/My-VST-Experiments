@@ -39,16 +39,19 @@ All pairings share these stages:
 
 ## Presets
 
-The preset menu at the top of the window (with ◀ ▶ to step through) has 30 factory sounds.
+The preset menu at the top of the window (with ◀ ▶ to step through) has 37 factory sounds.
 A `*` after the name means you've changed something since loading it. Your own
 sounds are saved with the Cubase project, and you can store them with Cubase's own preset
 save (the disk icon in the plugin window), which writes a `.vstpreset` file.
 
 | Category | Presets |
 |---|---|
-| **Realistic** | Init, Nylon Guitar, Steel Guitar, Concert Harp, Hammered Dulcimer, Cello, Violin, Clarinet, Alto Sax, Oboe, Trumpet, French Horn, Flute, Pan Pipe |
-| **Hybrid** | Bowed Cone, Reed Fiddle, Plucked Horn, Brass Strings, Air Clarinet |
-| **Strange** | Bell Garden, Gong Bloom, Underwater Plates, Glass Bow, Bowed Metal, E-Bow Drone, Brass Scream, Sax Growler, Broken Bugle, Chaos Choir, Buzz Reed Drone |
+| **Realistic** | Init, Nylon Guitar, Steel Guitar, Concert Harp, Hammered Dulcimer, Cello, Violin, Clarinet, Alto Sax, Oboe, Trumpet, French Horn, Flute, Pan Pipe, Sitar, Tanpura, Sarangi, Santoor, Dizi |
+| **Hybrid** | Bowed Cone, Reed Fiddle, Plucked Horn, Brass Strings, Air Clarinet, Kazoo Reed |
+| **Strange** | Bell Garden, Gong Bloom, Underwater Plates, Glass Bow, Bowed Metal, E-Bow Drone, Brass Scream, Sax Growler, Broken Bugle, Chaos Choir, Jawari Halo, Buzz Reed Drone |
+
+The Sitar, Sarangi and Santoor use sympathetic strings tuned to C. Set *Key* to the key
+of your music. The Sitar plays in Legato mode, so overlapping notes slide (meend).
 
 The wind, brass and bowed presets are set up for a keyboard with aftertouch: velocity
 starts the note and key pressure swells it (*AT → Breath* about 50–60 %). Wind and brass
@@ -87,6 +90,27 @@ gets brassier, reeds buzz, the bow digs in, and past a point reeds choke and
 flutes overblow, as the real instruments do.
 
 Other MIDI: pitch bend (range adjustable) and the sustain pedal.
+
+## Buzz and sympathetic strings
+
+**Buzz** (Resonator section) adds a buzzing bridge or membrane:
+
+- On **plucked and bowed** sounds it models a sitar's *jawari* bridge. The string wraps
+  onto a wide, curved bridge whenever it swings past it, which momentarily shortens it.
+  That lossless length modulation keeps pumping energy into high partials, so the
+  note blooms with buzz as it rings. The bridge sits at a fixed height, so loud notes
+  buzz more than soft ones. The pitch is compensated and stays in tune.
+- On **blown** sounds (reed, lips, air jet) it is a buzzing membrane that slaps against
+  the air column, as on a Chinese dizi flute or a kazoo. It adds the rattle without
+  disturbing the oscillation or the pitch.
+
+**Sympathetic** strings are 12 undriven strings shared by all voices, like a sitar's taraf
+strings or the open strings of a harp or a pedalled piano. Everything you play excites them,
+and they ring on wherever their tuning matches the music, leaving a shimmering, stereo halo.
+
+- **Key** and **Tuning** (chromatic, drone on tonic and fifth, major, minor, pentatonic)
+  set what they're tuned to. Set the key to the key of the music.
+- **Mix** sets how loud the halo is (0 % = off), and **Decay** how long it rings.
 
 ## The Strange knob
 

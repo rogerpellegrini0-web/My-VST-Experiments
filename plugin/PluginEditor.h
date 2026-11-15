@@ -34,8 +34,8 @@ private:
         juce::String title;
         std::vector<Knob*> knobs;
         juce::Rectangle<int> bounds;
-        juce::Component* extra = nullptr;   // optional non-knob control in the first cell
-        int cells() const { return (int) knobs.size() + (extra != nullptr ? 1 : 0); }
+        std::vector<std::pair<juce::Label*, juce::Component*>> extras;   // non-knob controls, first cells
+        int cells() const { return (int) (knobs.size() + extras.size()); }
     };
 
     void timerCallback() override;
@@ -56,6 +56,10 @@ private:
     juce::TextButton prevPreset { juce::String::fromUTF8 ("\xe2\x97\x80") }, nextPreset { juce::String::fromUTF8 ("\xe2\x96\xb6") };
     juce::Label presetLabel { {}, "PRESET" };
     int shownPreset = -1; bool shownModified = false;
+
+    juce::ComboBox symKeyBox, symTuningBox;
+    juce::Label symKeyLabel { {}, "Key" }, symTuningLabel { {}, "Tuning" };
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> symKeyAttachment, symTuningAttachment;
 
     juce::ComboBox modeBox;
     juce::Label modeLabel { {}, "Mode" };

@@ -64,6 +64,8 @@ void Voice::prepare (double sampleRate, uint32_t noiseSeed)
     loopDc.setup (fs, 5.0f);
     outDc.setup (fs, 10.0f);
     energyCoef = (float) (1.0 / (0.005 * fs));
+    memCoef = (float) (1.0 / (0.02 * fs));
+    memHp.setup (fs, 400.0f);
     noise.seed (noiseSeed);
     reset();
 }
@@ -107,6 +109,8 @@ void Voice::start (int newNote, float vel, const Params& p)
     drive = driveStep = 0.0f;
     growl = growlStep = growlPhase = growlWalk = 0.0f;
     guardRms = 0.25f * 0.25f; guardGain = -1.0f;   // set on the first block
+    buzzLast = buzzAvg = 0.0f;
+    memRms = 0.0f; memHp.reset();
     samplesSinceStart = 0;
     vibPhase = 0.0f;
 
@@ -493,6 +497,25 @@ void Voice::updateControl (const Params& p, const VoiceMod& mod, int chunk)
     strangePush = exciter == Exciter::Jet ? 1.0f : 1.0f + 0.7f * smoothRamp (strange, 0.75f, 1.0f);
     if (chaos > 0.0f) chaosHp.setup (fs, 0.25f * f);
 
+    // Bridge buzz: a one-sided contact surface at the bridge end of the loop. Any wave
+    // that would pass it is pushed back, which constantly spreads energy into high
+    // partials (the sitar's buzzing "jawari"). The surface sits at a fixed level, so a
+    // plucked note buzzes brightly while it is loud and clears as it decays.
+    // Strings (pluck, bow) get the bridge contact inside the loop. Blown instruments get a
+    // buzzing membrane on the output instead (like a dizi's membrane or a kazoo): their
+    // oscillation is too sensitive to loop-length modulation, and physically the membrane
+    // rattles along with the air column rather than changing the bore.
+    const bool stringBuzz = exciter == Exciter::Pluck || exciter == Exciter::Bow;
+    buzzLevel    = stringBuzz && p.buzz > 0.001f ? 0.3f * std::exp (-4.5f * clampf (p.buzz, 0.0f, 1.0f)) : 1e9f;
+    buzzDepth    = 120.0f;                                // samples of shortening per unit of excess
+    membrane     = stringBuzz ? 0.0f : clampf (p.buzz, 0.0f, 1.0f);
+    memThreshold = 1.4f - 1.1f * membrane;                // relative to the note's RMS
+    memMakeup    = 1.0f / (1.0f + 0.9f * membrane);       // the slaps add energy: keep the level
+    buzzMaxShift = std::max (0.0f, 0.12f * period - 1.0f);
+    buzzAvgCoef  = 1.0f / (4.0f * period);                // average over ~4 periods
+    // blown exciters pull the pitch back by themselves: they need only half the add-back
+    buzzComp     = exciter == Exciter::Pluck || exciter == Exciter::Bow ? 1.0f : 0.5f;
+
     setupExciter (p, f, period);
     const float targetGain = setupResonator (p, f, w, period);
 
@@ -621,7 +644,14 @@ void Voice::renderSamples (float* out, int n) noexcept
         const float shorten = 1.0f / (1.0f + tension * energy);
 
         // 1. wave arriving at the excitation point
-        const float rawFar = dlA.read (dA * shorten);
+        // Bridge buzz: while the wave pushes past the bridge surface the string wraps onto it
+        // and its vibrating length shortens. This audio-rate length modulation is lossless
+        // and pumps energy into high partials (the sitar's "jawari" buzz).
+        // The running average of the shortening is added back so the buzz brightens the
+        // tone without pulling the pitch sharp.
+        const float contact = std::min (buzzMaxShift, buzzDepth * std::max (0.0f, buzzLast - buzzLevel));
+        buzzAvg += (contact - buzzAvg) * buzzAvgCoef;
+        const float rawFar = dlA.read (dA * shorten - contact + buzzComp * buzzAvg);
         float y = loopLP.process (rawFar);
         for (auto& ap : disp) y = ap.process (y);
 
@@ -630,6 +660,7 @@ void Voice::renderSamples (float* out, int n) noexcept
         if (satDrive > 1.0f)
             y = chaosHp.process (fastTanh (y * satDrive) / satDrive * satBoost);
         energy += (y * y - energy) * energyCoef;
+        buzzLast = y;
 
         float reflFar, reflNear = 0.0f, x;
         if (twoSegment)
@@ -695,6 +726,17 @@ void Voice::render (float* out, int numSamples, const Params& p, const VoiceMod&
         guardTarget *= exprAmp;
         if (guardGain < 0.0f) guardGain = guardTarget;
         const float guardStep = (guardTarget - guardGain) / (float) chunk;
+
+        if (membrane > 0.0f)
+            for (int i = 0; i < chunk; ++i)
+            {
+                // the membrane slaps whenever the pressure exceeds a level set relative to the
+                // note's own loudness: one-sided spikes, high-passed, added to the sound
+                const float x = tmp[i];
+                memRms += (x * x - memRms) * memCoef;
+                const float over = std::max (0.0f, x - std::sqrt (memRms) * memThreshold);
+                tmp[i] = (x + membrane * 4.0f * memHp.process (over)) * memMakeup;
+            }
 
         float peak = 0.0f, sumSq = 0.0f;
         for (int i = 0; i < chunk; ++i)

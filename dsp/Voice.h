@@ -121,6 +121,10 @@ private:
     std::array<Allpass2, kNumScramblers> scramblers;
     DCBlocker chaosHp;                            // note-tracking high-pass in the chaos stage
     float guardRms = 0.016f, guardGain = 1.0f;    // level guard
+    float buzzLevel = 1e9f;                       // bridge contact threshold (huge = off)
+    float buzzDepth = 0.0f, buzzMaxShift = 0.0f, buzzLast = 0.0f, buzzAvg = 0.0f, buzzAvgCoef = 0.01f, buzzComp = 1.0f;
+    float membrane = 0.0f, memThreshold = 1.0f, memMakeup = 1.0f, memRms = 0.0f, memCoef = 0.001f;   // buzzing membrane (blown)
+    DCBlocker memHp;
     float satDrive = 1.0f, satBoost = 1.0f;       // in-loop saturation and gain
     float tension = 0.0f, energy = 0.0f, energyCoef = 0.004f;   // amplitude-dependent pitch
     float strangePush = 1.0f;                     // exciter overdrive

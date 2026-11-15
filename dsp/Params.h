@@ -76,6 +76,15 @@ struct Params
     // The strange knob: 0 = realistic ... 1 = inharmonic / chaotic
     float strange        = 0.0f;
 
+    // Bridge buzz (sitar "jawari"; a kazoo-like membrane on tubes): 0 = off
+    float buzz           = 0.0f;
+
+    // Sympathetic strings (shared by all voices)
+    float symMix         = 0.0f;   // 0..1, 0 = off
+    float symDecay       = 6.0f;   // seconds
+    int   symKey         = 0;      // 0 = C ... 11 = B
+    int   symTuning      = 1;      // see SympatheticStrings::kTunings (0 chromatic, 1 drone, 2 major, 3 minor, 4 pentatonic)
+
     // Body / output
     float bodyMix     = 0.4f;   // 0..1
     float bodySize    = 0.5f;   // 0..1

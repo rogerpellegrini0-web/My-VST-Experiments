@@ -120,6 +120,44 @@ inline std::vector<Preset> factoryPresets()
         p.damping = 0.65f; p.release = 0.25f;
         p.vibratoDepth = 0.0f; p.atToBreath = 0.4f; p.bodyMix = 0.0f; });
 
+    // Instruments built on bridge buzz and sympathetic strings. The Sympathetic Key
+    // defaults to C: set it to the key (or drone) of the music.
+    add ("Realistic", "Sitar", [] (Params& p) {
+        p.exciter = E::Pluck; p.resonator = R::String;
+        p.tone = 0.75f; p.noise = 0.1f; p.position = 0.3f;
+        p.decay = 6.0f; p.damping = 0.2f; p.stiffness = 0.1f; p.buzz = 0.7f; p.release = 1.5f;
+        p.vibratoDepth = 0.0f; p.voiceMode = M::Legato; p.glide = 0.08f; p.bendRange = 4.0f;
+        p.symMix = 0.45f; p.symTuning = 2; p.symDecay = 8.0f;
+        p.bodyMix = 0.45f; p.bodySize = 0.6f; p.levelDb = 0.0f; });
+
+    add ("Realistic", "Tanpura", [] (Params& p) {
+        p.exciter = E::Pluck; p.resonator = R::String;
+        p.tone = 0.45f; p.noise = 0.08f; p.position = 0.5f;
+        p.decay = 12.0f; p.damping = 0.15f; p.stiffness = 0.05f; p.buzz = 0.9f; p.release = 3.0f;
+        p.vibratoDepth = 0.0f; p.bodyMix = 0.5f; p.bodySize = 0.75f; });
+
+    add ("Realistic", "Sarangi", [] (Params& p) {
+        p.exciter = E::Bow; p.resonator = R::String;
+        p.tone = 0.5f; p.pressure = 0.55f; p.noise = 0.2f; p.attack = 0.12f;
+        p.position = 0.45f; p.decay = 4.0f; p.damping = 0.5f; p.buzz = 0.25f; p.release = 0.5f;
+        p.vibratoRate = 5.5f; p.vibratoDepth = 0.35f; p.voiceMode = M::Legato; p.glide = 0.06f;
+        p.atToBreath = 0.5f; p.symMix = 0.5f; p.symTuning = 1; p.symDecay = 6.0f;
+        p.bodyMix = 0.5f; p.bodySize = 0.55f; });
+
+    add ("Realistic", "Santoor", [] (Params& p) {
+        p.exciter = E::Pluck; p.resonator = R::String;
+        p.tone = 0.85f; p.noise = 0.05f; p.position = 0.25f;
+        p.decay = 4.0f; p.damping = 0.35f; p.stiffness = 0.15f; p.release = 2.0f;
+        p.vibratoDepth = 0.0f; p.symMix = 0.35f; p.symTuning = 0; p.symDecay = 5.0f;
+        p.bodyMix = 0.4f; p.bodySize = 0.65f; p.levelDb = 3.0f; });
+
+    add ("Realistic", "Dizi", [] (Params& p) {
+        p.exciter = E::Jet; p.resonator = R::OpenTube;
+        p.tone = 0.5f; p.shape = 0.5f; p.pressure = 0.55f; p.noise = 0.25f; p.attack = 0.06f;
+        p.damping = 0.4f; p.buzz = 0.4f; p.release = 0.15f;
+        p.vibratoRate = 5.5f; p.vibratoDepth = 0.3f; p.voiceMode = M::Legato; p.glide = 0.03f;
+        p.atToBreath = 0.6f; p.bodyMix = 0.0f; });
+
     // ------------------------------------------------------------------ Hybrid
     add ("Hybrid", "Bowed Cone", [] (Params& p) {
         p.exciter = E::Bow; p.resonator = R::ConicalTube;
@@ -152,6 +190,13 @@ inline std::vector<Preset> factoryPresets()
         p.tone = 0.5f; p.shape = 0.5f; p.pressure = 0.55f; p.noise = 0.35f; p.attack = 0.06f;
         p.damping = 0.5f; p.release = 0.2f; p.vibratoDepth = 0.25f;
         p.voiceMode = M::Legato; p.glide = 0.03f; p.atToBreath = 0.6f; p.bodyMix = 0.0f; });
+
+    add ("Hybrid", "Kazoo Reed", [] (Params& p) {
+        p.exciter = E::Reed; p.resonator = R::ConicalTube;
+        p.tone = 0.55f; p.pressure = 0.6f; p.noise = 0.15f; p.attack = 0.04f;
+        p.damping = 0.5f; p.buzz = 0.5f; p.release = 0.15f;
+        p.vibratoDepth = 0.2f; p.voiceMode = M::Legato; p.glide = 0.04f; p.atToBreath = 0.6f;
+        p.bodyMix = 0.05f; });
 
     // ------------------------------------------------------------------ Strange
     add ("Strange", "Bell Garden", [] (Params& p) {
@@ -216,6 +261,13 @@ inline std::vector<Preset> factoryPresets()
         p.tone = 0.5f; p.shape = 0.5f; p.pressure = 0.6f; p.noise = 0.4f; p.attack = 0.3f;
         p.damping = 0.45f; p.release = 0.8f; p.vibratoRate = 4.0f; p.vibratoDepth = 0.45f;
         p.atToBreath = 0.4f; p.bodyMix = 0.3f; p.bodySize = 0.8f; p.strange = 0.7f; });
+
+    add ("Strange", "Jawari Halo", [] (Params& p) {
+        p.exciter = E::Pluck; p.resonator = R::String;
+        p.tone = 0.6f; p.noise = 0.1f; p.position = 0.35f;
+        p.decay = 10.0f; p.damping = 0.2f; p.stiffness = 0.2f; p.buzz = 1.0f; p.release = 1.5f;
+        p.vibratoDepth = 0.0f; p.symMix = 0.8f; p.symTuning = 4; p.symDecay = 12.0f;
+        p.bodyMix = 0.3f; p.bodySize = 0.8f; p.strange = 0.45f; });
 
     add ("Strange", "Buzz Reed Drone", [] (Params& p) {
         p.exciter = E::Reed; p.resonator = R::CylindricalTube;

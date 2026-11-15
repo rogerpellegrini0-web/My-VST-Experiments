@@ -240,6 +240,9 @@ int main (int argc, char** argv)
                 p.attack = 0.001f + u (rng); p.release = 0.01f + 3 * u (rng);
                 p.vibratoDepth = u (rng); p.bodyMix = u (rng); p.bodySize = u (rng);
                 p.strange = u (rng) < 0.3f ? 0.0f : u (rng); p.atToStrange = u (rng);
+                p.buzz = u (rng) < 0.5f ? 0.0f : u (rng);
+                p.symMix = u (rng) < 0.5f ? 0.0f : u (rng); p.symDecay = 0.5f + 19.5f * u (rng);
+                p.symKey = (int) (u (rng) * 12) % 12; p.symTuning = (int) (u (rng) * 5) % 5;
                 p.voiceMode = (VoiceMode) std::min (2, (int) (u (rng) * 3)); p.glide = u (rng) * 0.3f;
                 eng.setParams (p);
                 eng.setChannelPressure (u (rng));
@@ -393,6 +396,65 @@ int main (int argc, char** argv)
         std::printf ("  plucked A2 partial deviation: %.1f cents at 0 %%, %.1f cents at 50 %%\n", h0, h5);
         check (h0 < 3.0, "strange 0 %: harmonic partials");
         check (h5 > 20.0, "strange 50 %: clearly inharmonic partials");
+    }
+
+    // ---------------------------------------------------------------- buzz + sympathetic strings
+    std::printf ("\n== Bridge buzz and sympathetic strings ==\n");
+    {
+        const double fs = 48000.0;
+        auto check = [&] (bool ok, const char* what) { if (! ok) ++failures; std::printf ("  %-58s %s\n", what, ok ? "ok" : "FAIL"); };
+
+        // high-frequency share (energy above ~2.5 kHz relative to total) of a plucked A2
+        auto hfShare = [&] (float buzz, double t0, double t1) {
+            Engine eng; eng.prepare (fs, 256);
+            Params p; p.bodyMix = 0; p.vibratoDepth = 0; p.decay = 6; p.damping = 0.2f; p.tone = 0.6f; p.buzz = buzz;
+            eng.setParams (p);
+            Render rr = renderNote (eng, 45, 0.9f, fs, 3.0, 0.0);
+            const double r = std::exp (-2.0 * (double) kPi * 2500.0 / fs);
+            double x1 = 0, y1 = 0, y2 = 0, z1 = 0, e = 0, t = 0;
+            for (int i = 0; i < (int) (t1 * fs); ++i)
+            {
+                const double x = rr.L[(size_t) i];
+                const double y = r * (y1 + x - x1); x1 = x; y1 = y;
+                const double z = r * (z1 + y - y2); y2 = y; z1 = z;
+                if (i >= (int) (t0 * fs)) { e += z * z; t += x * x; }
+            }
+            return 10.0 * std::log10 (e / (t + 1e-20) + 1e-12); };
+        const double plain = hfShare (0.0f, 1.5, 2.5), buzzy = hfShare (0.9f, 1.5, 2.5);
+        std::printf ("  plucked A2, 1.5-2.5 s, energy above 2.5 kHz: %.1f dB plain, %.1f dB with buzz\n", plain, buzzy);
+        check (buzzy > plain + 6.0, "buzz: bright jawari bloom on a plucked string");
+
+        bool stable = true, released = true;
+        for (int e = 0; e < kNumExciters; ++e)
+        for (int r = 0; r < kNumResonators; ++r)
+        for (float buzz : { 0.5f, 1.0f })
+        {
+            Engine eng; eng.prepare (fs, 512);
+            Params p = comboParams (e, r); p.buzz = buzz; eng.setParams (p);
+            Render rr = renderNote (eng, 57, 0.8f, fs, 1.0, 4.0);
+            stable = stable && allFinite (rr.L) && peakOf (rr.L) < 1.0f;
+            released = released && eng.activeVoiceCount() == 0;
+        }
+        check (stable, "buzz 50/100 % on all pairings: finite, below full scale");
+        check (released, "buzz 50/100 % on all pairings: voices end after release");
+
+        // sympathetic strings: a short, damped note; listen to what keeps ringing
+        auto tail = [&] (int note, float mix, int tuning, double& pitch) {
+            Engine eng; eng.prepare (fs, 256);
+            Params p; p.bodyMix = 0; p.vibratoDepth = 0; p.decay = 0.4f; p.release = 0.05f;
+            p.symMix = mix; p.symKey = 9; p.symTuning = tuning; p.symDecay = 6.0f;
+            eng.setParams (p);
+            Render rr = renderNote (eng, note, 0.9f, fs, 0.3, 2.0);
+            const int a = (int) (1.0 * fs), len = (int) (0.5 * fs);
+            double e = 0; for (int i = a; i < a + len; ++i) e += (double) rr.L[(size_t) i] * rr.L[(size_t) i];
+            pitch = e > 1e-12 ? estimatePitch (rr.L.data() + a, len, fs) : 0.0;
+            return 10.0 * std::log10 (e / len + 1e-20); };
+        double pitchIn = 0, pitchOut = 0, pitchOff = 0;
+        const double inKey = tail (57, 1.0f, 1, pitchIn), outKey = tail (58, 1.0f, 1, pitchOut), off = tail (57, 0.0f, 1, pitchOff);
+        std::printf ("  tail 0.7 s after a short A3 / Bb3 (drone on A): %.1f / %.1f dB, off: %.1f dB, ring pitch %.1f Hz\n", inKey, outKey, off, pitchIn);
+        check (inKey > -70.0 && inKey > outKey + 10.0, "sympathetic: in-key notes ring on, out-of-key much less");
+        check (std::fabs (1200.0 * std::log2 (pitchIn / 220.0)) < 10.0, "sympathetic: rings at the played pitch");
+        check (off < -150.0, "sympathetic: Mix 0 adds nothing");
     }
 
     // ---------------------------------------------------------------- presets

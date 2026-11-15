@@ -86,6 +86,14 @@ juce::AudioProcessorValueTreeState::ParameterLayout FilamentProcessor::createLay
     l.add (std::make_unique<APF> (id ("atStrange"),   "AT to Strange",   juce::NormalisableRange<float> (0, 1), 0.0f, percent()));
     l.add (std::make_unique<APF> (id ("strange"),     "Strange",         juce::NormalisableRange<float> (0, 1), 0.0f, percent()));
 
+    l.add (std::make_unique<APF> (id ("buzz"),        "Buzz",            juce::NormalisableRange<float> (0, 1), 0.0f, percent()));
+    l.add (std::make_unique<APF> (id ("symMix"),      "Sympathetic Mix", juce::NormalisableRange<float> (0, 1), 0.0f, percent()));
+    l.add (std::make_unique<APF> (id ("symDecay"),    "Sympathetic Decay", skewed (0.5f, 20.0f, 5.0f), 6.0f, seconds()));
+    l.add (std::make_unique<juce::AudioParameterChoice> (id ("symKey"), "Sympathetic Key",
+        juce::StringArray { "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B" }, 0));
+    l.add (std::make_unique<juce::AudioParameterChoice> (id ("symTuning"), "Sympathetic Tuning",
+        juce::StringArray { "Chromatic", "Drone", "Major", "Minor", "Pentatonic" }, 1));
+
     l.add (std::make_unique<APF> (id ("bodyMix"),   "Body Mix",  juce::NormalisableRange<float> (0, 1), 0.4f, percent()));
     l.add (std::make_unique<APF> (id ("bodySize"),  "Body Size", juce::NormalisableRange<float> (0, 1), 0.5f, percent()));
     l.add (std::make_unique<APF> (id ("level"),     "Level",     juce::NormalisableRange<float> (-36.0f, 6.0f), -6.0f, withSuffix (" dB", 1)));
@@ -122,6 +130,11 @@ FilamentProcessor::FilamentProcessor()
     raw.growl     = p ("growl");
     raw.atStrange = p ("atStrange");
     raw.strange   = p ("strange");
+    raw.buzz      = p ("buzz");
+    raw.symMix    = p ("symMix");
+    raw.symDecay  = p ("symDecay");
+    raw.symKey    = p ("symKey");
+    raw.symTuning = p ("symTuning");
     raw.bodyMix   = p ("bodyMix");
     raw.bodySize  = p ("bodySize");
     raw.level     = p ("level");
@@ -129,7 +142,7 @@ FilamentProcessor::FilamentProcessor()
     for (auto* param : getParameters())
         if (auto* withId = dynamic_cast<juce::AudioProcessorParameterWithID*> (param))
             apvts.addParameterListener (withId->paramID, this);
-    apvts.state.setProperty ("presetIndex", 0, nullptr);
+    apvts.state.setProperty ("presetName", "Init", nullptr);
 }
 
 FilamentProcessor::~FilamentProcessor()
@@ -154,7 +167,11 @@ void FilamentProcessor::setParam (const char* id, float value)
 
 int FilamentProcessor::getPresetIndex() const
 {
-    return juce::jlimit (0, (int) presets.size() - 1, (int) apvts.state.getProperty ("presetIndex", 0));
+    // stored by name, so adding presets in later versions doesn't relabel old projects
+    const auto name = apvts.state.getProperty ("presetName").toString();
+    for (int i = 0; i < (int) presets.size(); ++i)
+        if (name == presets[(size_t) i].name) return i;
+    return 0;
 }
 
 void FilamentProcessor::applyPreset (int index)
@@ -188,12 +205,17 @@ void FilamentProcessor::applyPreset (int index)
     setParam ("growl",       p.growl);
     setParam ("atStrange",   p.atToStrange);
     setParam ("strange",     p.strange);
+    setParam ("buzz",        p.buzz);
+    setParam ("symMix",      p.symMix);
+    setParam ("symDecay",    p.symDecay);
+    setParam ("symKey",      (float) p.symKey);
+    setParam ("symTuning",   (float) p.symTuning);
     setParam ("bodyMix",     p.bodyMix);
     setParam ("bodySize",    p.bodySize);
     setParam ("level",       p.levelDb);
     applyingPreset = false;
 
-    apvts.state.setProperty ("presetIndex", index, nullptr);
+    apvts.state.setProperty ("presetName", juce::String (presets[(size_t) index].name), nullptr);
     presetModified = false;
 }
 
@@ -240,6 +262,11 @@ filament::Params FilamentProcessor::readParams() const
     p.growl        = raw.growl->load();
     p.atToStrange  = raw.atStrange->load();
     p.strange      = raw.strange->load();
+    p.buzz         = raw.buzz->load();
+    p.symMix       = raw.symMix->load();
+    p.symDecay     = raw.symDecay->load();
+    p.symKey       = juce::jlimit (0, 11, (int) raw.symKey->load());
+    p.symTuning    = juce::jlimit (0, 4, (int) raw.symTuning->load());
     p.bodyMix      = raw.bodyMix->load();
     p.bodySize     = raw.bodySize->load();
     p.levelDb      = raw.level->load();
@@ -315,6 +342,17 @@ void FilamentProcessor::setStateInformation (const void* data, int sizeInBytes)
             apvts.replaceState (juce::ValueTree::fromXml (*xml));
             // projects from before presets existed: show as a modified Init
             presetModified = (bool) apvts.state.getProperty ("presetModified", true);
+            // version 0.5 stored the preset's position; its list had no buzz/sympathetic presets
+            if (! apvts.state.hasProperty ("presetName") && apvts.state.hasProperty ("presetIndex"))
+            {
+                static const char* v05[] = { "Init", "Nylon Guitar", "Steel Guitar", "Concert Harp", "Hammered Dulcimer",
+                    "Cello", "Violin", "Clarinet", "Alto Sax", "Oboe", "Trumpet", "French Horn", "Flute", "Pan Pipe",
+                    "Bowed Cone", "Reed Fiddle", "Plucked Horn", "Brass Strings", "Air Clarinet", "Bell Garden",
+                    "Gong Bloom", "Underwater Plates", "Glass Bow", "Bowed Metal", "E-Bow Drone", "Brass Scream",
+                    "Sax Growler", "Broken Bugle", "Chaos Choir", "Buzz Reed Drone" };
+                const int i = juce::jlimit (0, 29, (int) apvts.state.getProperty ("presetIndex"));
+                apvts.state.setProperty ("presetName", juce::String (v05[i]), nullptr);
+            }
         }
 }
 

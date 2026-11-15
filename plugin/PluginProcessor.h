@@ -26,7 +26,7 @@ public:
     bool acceptsMidi() const override  { return true; }
     bool producesMidi() const override { return false; }
     bool isMidiEffect() const override { return false; }
-    double getTailLengthSeconds() const override { return 3.0; }
+    double getTailLengthSeconds() const override { return 8.0; }   // sympathetic strings ring on
 
     int getNumPrograms() override { return 1; }
     int getCurrentProgram() override { return 0; }
@@ -92,6 +92,11 @@ private:
         std::atomic<float>* growl {};
         std::atomic<float>* atStrange {};
         std::atomic<float>* strange {};
+        std::atomic<float>* buzz {};
+        std::atomic<float>* symMix {};
+        std::atomic<float>* symDecay {};
+        std::atomic<float>* symKey {};
+        std::atomic<float>* symTuning {};
         std::atomic<float>* bodyMix {};
         std::atomic<float>* bodySize {};
         std::atomic<float>* level {};
