@@ -377,7 +377,7 @@ int main (int argc, char** argv)
             const int a = (int) (0.05 * fs), len = (int) (0.6 * fs);
             auto mag = [&] (double f) {
                 double re = 0, im = 0;
-                for (int i = 0; i < len; ++i) { const double w = 0.5 - 0.5 * std::cos (2 * M_PI * i / len), ph = 2 * M_PI * f * i / fs;
+                for (int i = 0; i < len; ++i) { const double w = 0.5 - 0.5 * std::cos (2.0 * (double) kPi * i / len), ph = 2.0 * (double) kPi * f * i / fs;
                                                 re += w * rr.L[(size_t) (a + i)] * std::cos (ph); im -= w * rr.L[(size_t) (a + i)] * std::sin (ph); }
                 return std::sqrt (re * re + im * im); };
             double dev = 0;
