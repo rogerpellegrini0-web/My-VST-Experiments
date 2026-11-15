@@ -125,6 +125,76 @@ FilamentProcessor::FilamentProcessor()
     raw.bodyMix   = p ("bodyMix");
     raw.bodySize  = p ("bodySize");
     raw.level     = p ("level");
+
+    for (auto* param : getParameters())
+        if (auto* withId = dynamic_cast<juce::AudioProcessorParameterWithID*> (param))
+            apvts.addParameterListener (withId->paramID, this);
+    apvts.state.setProperty ("presetIndex", 0, nullptr);
+}
+
+FilamentProcessor::~FilamentProcessor()
+{
+    for (auto* param : getParameters())
+        if (auto* withId = dynamic_cast<juce::AudioProcessorParameterWithID*> (param))
+            apvts.removeParameterListener (withId->paramID, this);
+}
+
+//==============================================================================
+void FilamentProcessor::parameterChanged (const juce::String&, float)
+{
+    if (! applyingPreset)
+        presetModified = true;
+}
+
+void FilamentProcessor::setParam (const char* id, float value)
+{
+    if (auto* param = apvts.getParameter (id))
+        param->setValueNotifyingHost (param->convertTo0to1 (value));
+}
+
+int FilamentProcessor::getPresetIndex() const
+{
+    return juce::jlimit (0, (int) presets.size() - 1, (int) apvts.state.getProperty ("presetIndex", 0));
+}
+
+void FilamentProcessor::applyPreset (int index)
+{
+    if (index < 0 || index >= (int) presets.size()) return;
+    const auto& p = presets[(size_t) index].params;
+
+    applyingPreset = true;
+    setParam ("exciter",     (float) (int) p.exciter);
+    setParam ("resonator",   (float) (int) p.resonator);
+    setParam ("tone",        p.tone);
+    setParam ("shape",       p.shape);
+    setParam ("pressure",    p.pressure);
+    setParam ("noise",       p.noise);
+    setParam ("attack",      p.attack);
+    setParam ("position",    p.position);
+    setParam ("decay",       p.decay);
+    setParam ("damping",     p.damping);
+    setParam ("stiffness",   p.stiffness);
+    setParam ("release",     p.release);
+    setParam ("vibRate",     p.vibratoRate);
+    setParam ("vibDepth",    p.vibratoDepth);
+    setParam ("bendRange",   p.bendRange);
+    setParam ("velSens",     p.velocitySens);
+    setParam ("voiceMode",   (float) (int) p.voiceMode);
+    setParam ("glide",       p.glide);
+    setParam ("atBreath",    p.atToBreath);
+    setParam ("wheelBreath", p.wheelToBreath);
+    setParam ("wheelVib",    p.wheelToVibrato);
+    setParam ("exprCurve",   p.exprCurve);
+    setParam ("growl",       p.growl);
+    setParam ("atStrange",   p.atToStrange);
+    setParam ("strange",     p.strange);
+    setParam ("bodyMix",     p.bodyMix);
+    setParam ("bodySize",    p.bodySize);
+    setParam ("level",       p.levelDb);
+    applyingPreset = false;
+
+    apvts.state.setProperty ("presetIndex", index, nullptr);
+    presetModified = false;
 }
 
 bool FilamentProcessor::isBusesLayoutSupported (const BusesLayout& layouts) const
@@ -231,6 +301,7 @@ juce::AudioProcessorEditor* FilamentProcessor::createEditor()
 
 void FilamentProcessor::getStateInformation (juce::MemoryBlock& destData)
 {
+    apvts.state.setProperty ("presetModified", presetModified.load(), nullptr);
     if (auto xml = apvts.copyState().createXml())
         copyXmlToBinary (*xml, destData);
 }
@@ -242,6 +313,8 @@ void FilamentProcessor::setStateInformation (const void* data, int sizeInBytes)
         {
             migrateFromV1 (*xml);
             apvts.replaceState (juce::ValueTree::fromXml (*xml));
+            // projects from before presets existed: show as a modified Init
+            presetModified = (bool) apvts.state.getProperty ("presetModified", true);
         }
 }
 

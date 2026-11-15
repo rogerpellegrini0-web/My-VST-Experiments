@@ -6,6 +6,7 @@
 //
 // Usage: filament_render_test [output_dir]
 #include "../dsp/Engine.h"
+#include "../dsp/Presets.h"
 
 #include <cmath>
 #include <cstdio>
@@ -392,6 +393,54 @@ int main (int argc, char** argv)
         std::printf ("  plucked A2 partial deviation: %.1f cents at 0 %%, %.1f cents at 50 %%\n", h0, h5);
         check (h0 < 3.0, "strange 0 %: harmonic partials");
         check (h5 > 20.0, "strange 50 %: clearly inharmonic partials");
+    }
+
+    // ---------------------------------------------------------------- presets
+    std::printf ("\n== Factory presets (phrase G3 C4 G4 C5; no pressure / full pressure) ==\n");
+    for (const auto& preset : factoryPresets())
+    {
+        const double fs = 48000.0;
+        double levels[2] {}; double worstCents = 0; bool finite = true, released = true;
+        for (int pass = 0; pass < 2; ++pass)
+        {
+            Engine eng; eng.prepare (fs, 512); eng.setParams (preset.params);
+            eng.setChannelPressure (pass == 0 ? 0.0f : 1.0f);
+            const int notes[] = { 55, 60, 67, 72 };
+            const int perNote = (int) (0.7 * fs), total = perNote * 4 + (int) (5.0 * fs);
+            std::vector<float> L ((size_t) total + 512), R ((size_t) total + 512);
+            double sum = 0; int count = 0;
+            for (int pos = 0; pos < total; pos += 512)
+            {
+                const int k = pos / perNote;
+                if (pos % perNote < 512 && k < 4) { if (k > 0) eng.noteOff (notes[k - 1]); eng.noteOn (notes[k], 0.8f); }
+                if (k == 4 && pos % perNote < 512) eng.noteOff (notes[3]);
+                eng.render (L.data() + pos, R.data() + pos, 512);
+            }
+            for (int k = 0; k < 4; ++k)
+            {
+                const int a = k * perNote + (int) (0.25 * fs), len = (int) (0.35 * fs);
+                double r = 0; for (int i = a; i < a + len; ++i) r += (double) L[(size_t) i] * L[(size_t) i];
+                sum += r / len; ++count;
+                if (std::string (preset.category) != "Strange" && pass == 1)
+                {
+                    const double expected = 440.0 * std::pow (2.0, (notes[k] - 69) / 12.0);
+                    const double c = 1200.0 * std::log2 (estimatePitch (L.data() + a, len, fs) / expected);
+                    // octave-equivalent error (the pitch tracker may pick a sub/super-octave)
+                    const double ce = std::fabs (std::remainder (c, 1200.0));
+                    worstCents = std::max (worstCents, ce);
+                }
+            }
+            levels[pass] = 10.0 * std::log10 (sum / count + 1e-20);
+            finite = finite && allFinite (L);
+            released = released && eng.activeVoiceCount() == 0;
+        }
+        const bool pitched = std::string (preset.category) != "Strange";
+        const bool ok = finite && released && levels[0] > -38.0 && levels[1] > -38.0
+                        && levels[0] < -5.0 && levels[1] < -5.0 && (! pitched || worstCents < 15.0);
+        if (! ok) ++failures;
+        std::printf ("  %-9s %-20s level %6.1f / %6.1f dB   %s  %s\n", preset.category, preset.name, levels[0], levels[1],
+                     pitched ? (std::string ("pitch err ") + std::to_string ((int) std::lround (worstCents)) + "c").c_str() : "           ",
+                     ok ? "ok" : "FAIL");
     }
 
     // ---------------------------------------------------------------- demos

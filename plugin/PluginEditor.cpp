@@ -167,6 +167,45 @@ FilamentEditor::FilamentEditor (FilamentProcessor& p)
     keyboard.setColour (juce::MidiKeyboardComponent::keyDownOverlayColourId, lnf.accent.withAlpha (0.6f));
     addAndMakeVisible (keyboard);
 
+    // presets: grouped by category, with previous / next buttons
+    {
+        const auto& presets = processor.getPresets();
+        juce::String lastCategory;
+        for (int i = 0; i < (int) presets.size(); ++i)
+        {
+            if (lastCategory != presets[(size_t) i].category)
+            {
+                lastCategory = presets[(size_t) i].category;
+                presetBox.addSectionHeading (lastCategory);
+            }
+            presetBox.addItem (presets[(size_t) i].name, i + 1);
+        }
+        presetBox.onChange = [this]
+        {
+            const int id = presetBox.getSelectedId();
+            if (id > 0) { processor.applyPreset (id - 1); refreshPresetDisplay (true); }
+        };
+        auto step = [this] (int delta)
+        {
+            const int n = (int) processor.getPresets().size();
+            processor.applyPreset ((processor.getPresetIndex() + delta + n) % n);
+            refreshPresetDisplay (true);
+        };
+        prevPreset.onClick = [step] { step (-1); };
+        nextPreset.onClick = [step] { step (+1); };
+        for (auto* b : { &prevPreset, &nextPreset })
+        {
+            b->setColour (juce::TextButton::buttonColourId, kPanel);
+            b->setColour (juce::TextButton::textColourOffId, kText);
+            addAndMakeVisible (*b);
+        }
+        presetLabel.setFont (juce::FontOptions (11.5f, juce::Font::bold));
+        presetLabel.setColour (juce::Label::textColourId, kDim);
+        addAndMakeVisible (presetLabel);
+        addAndMakeVisible (presetBox);
+        refreshPresetDisplay (true);
+    }
+
     setSize (900, 660);
     updateForModel();
     startTimerHz (15);
@@ -186,8 +225,21 @@ FilamentEditor::Knob& FilamentEditor::knob (const juce::String& id)
     return *knobs.front();
 }
 
+void FilamentEditor::refreshPresetDisplay (bool force)
+{
+    const int index = processor.getPresetIndex();
+    const bool modified = processor.isPresetModified();
+    if (! force && index == shownPreset && modified == shownModified) return;
+    shownPreset = index; shownModified = modified;
+    if (modified)
+        presetBox.setText (juce::String (processor.getPresets()[(size_t) index].name) + " *", juce::dontSendNotification);
+    else
+        presetBox.setSelectedId (index + 1, juce::dontSendNotification);
+}
+
 void FilamentEditor::timerCallback()
 {
+    refreshPresetDisplay (false);
     const int e = (int) processor.apvts.getRawParameterValue ("exciter")->load();
     const int r = (int) processor.apvts.getRawParameterValue ("resonator")->load();
     const int m = (int) processor.apvts.getRawParameterValue ("voiceMode")->load();
@@ -239,7 +291,6 @@ void FilamentEditor::paint (juce::Graphics& g)
     g.drawText ("FILAMENT", 20, 12, 200, 32, juce::Justification::centredLeft);
     g.setColour (kDim);
     g.setFont (juce::FontOptions (13.0f));
-    g.drawText ("waveguide physical modeling synth", 162, 20, 260, 20, juce::Justification::centredLeft);
     g.drawText (modelDescription, 20, 62, getWidth() - 40, 18, juce::Justification::centredLeft);
 
     for (auto& s : sections)
@@ -260,6 +311,14 @@ void FilamentEditor::resized()
     auto excArea = selectors.removeFromLeft (215);
     selectors.removeFromLeft (10);
     exciterLabel.setBounds (excArea.removeFromTop (18));
+    {
+        auto pr = juce::Rectangle<int> (162, 8, 268, 52);
+        presetLabel.setBounds (pr.removeFromTop (18));
+        auto row = pr.withHeight (28);
+        prevPreset.setBounds (row.removeFromLeft (28));
+        nextPreset.setBounds (row.removeFromRight (28));
+        presetBox.setBounds (row.reduced (4, 0));
+    }
     exciterBox.setBounds (excArea.withHeight (28));
     resonatorLabel.setBounds (selectors.removeFromTop (18));
     resonatorBox.setBounds (selectors.withHeight (28));

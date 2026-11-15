@@ -51,6 +51,12 @@ private:
     juce::ComboBox exciterBox, resonatorBox;
     juce::Label exciterLabel { {}, "EXCITER" }, resonatorLabel { {}, "RESONATOR" };
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> exciterAttachment, resonatorAttachment;
+    void refreshPresetDisplay (bool force);
+    juce::ComboBox presetBox;
+    juce::TextButton prevPreset { juce::String::fromUTF8 ("\xe2\x97\x80") }, nextPreset { juce::String::fromUTF8 ("\xe2\x96\xb6") };
+    juce::Label presetLabel { {}, "PRESET" };
+    int shownPreset = -1; bool shownModified = false;
+
     juce::ComboBox modeBox;
     juce::Label modeLabel { {}, "Mode" };
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> modeAttachment;

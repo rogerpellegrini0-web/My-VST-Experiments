@@ -4,12 +4,14 @@
 #include <juce_audio_utils/juce_audio_utils.h>
 
 #include "Engine.h"
+#include "Presets.h"
 
-class FilamentProcessor final : public juce::AudioProcessor
+class FilamentProcessor final : public juce::AudioProcessor,
+                                private juce::AudioProcessorValueTreeState::Listener
 {
 public:
     FilamentProcessor();
-    ~FilamentProcessor() override = default;
+    ~FilamentProcessor() override;
 
     void prepareToPlay (double sampleRate, int samplesPerBlock) override;
     void releaseResources() override {}
@@ -42,7 +44,20 @@ public:
     juce::AudioProcessorValueTreeState apvts;
     juce::MidiKeyboardState keyboardState;   // on-screen keyboard
 
+    // Factory presets (message thread only)
+    const std::vector<filament::Preset>& getPresets() const noexcept { return presets; }
+    void applyPreset (int index);
+    int  getPresetIndex() const;
+    bool isPresetModified() const noexcept { return presetModified.load(); }
+
 private:
+    void parameterChanged (const juce::String& parameterID, float newValue) override;
+    void setParam (const char* id, float value);
+
+    std::vector<filament::Preset> presets = filament::factoryPresets();
+    std::atomic<bool> presetModified { false };
+    bool applyingPreset = false;
+
     filament::Params readParams() const;
     void handleMidi (const juce::MidiMessage& m);
     static void migrateFromV1 (juce::XmlElement& xml);

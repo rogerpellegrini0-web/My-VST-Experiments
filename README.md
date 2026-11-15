@@ -37,6 +37,27 @@ All pairings share these stages:
 - velocity response
 - a soft-clipping output stage
 
+## Presets
+
+The preset menu at the top of the window (with ◀ ▶ to step through) has 30 factory sounds.
+A `*` after the name means you've changed something since loading it. Your own
+sounds are saved with the Cubase project, and you can store them with Cubase's own preset
+save (the disk icon in the plugin window), which writes a `.vstpreset` file.
+
+| Category | Presets |
+|---|---|
+| **Realistic** | Init, Nylon Guitar, Steel Guitar, Concert Harp, Hammered Dulcimer, Cello, Violin, Clarinet, Alto Sax, Oboe, Trumpet, French Horn, Flute, Pan Pipe |
+| **Hybrid** | Bowed Cone, Reed Fiddle, Plucked Horn, Brass Strings, Air Clarinet |
+| **Strange** | Bell Garden, Gong Bloom, Underwater Plates, Glass Bow, Bowed Metal, E-Bow Drone, Brass Scream, Sax Growler, Broken Bugle, Chaos Choir, Buzz Reed Drone |
+
+The wind, brass and bowed presets are set up for a keyboard with aftertouch: velocity
+starts the note and key pressure swells it (*AT → Breath* about 50–60 %). Wind and brass
+presets use Legato mode, so overlapping notes slur. *Brass Scream* and *Sax Growler* also
+push into the Strange knob as you press harder.
+
+Every preset is checked by the test suite: stable, releases cleanly, sensible level with
+and without aftertouch, and the realistic and hybrid ones in tune.
+
 ## Playing it from a keyboard
 
 - **Mode:** *Poly* (16 voices), *Mono* (one voice, every note re-articulates) or
@@ -128,7 +149,7 @@ ctest --test-dir build --output-on-failure   # writes demo_*.wav into build/
 ## Layout
 
 ```
-dsp/      framework-independent DSP: delay lines, filters, voices, engine
+dsp/      framework-independent DSP: delay lines, filters, voices, engine, presets
 plugin/   JUCE wrapper: parameters, MIDI handling, editor UI
 tests/    offline renderer: tuning, stability, release, demo WAVs
 ```
