@@ -14,10 +14,19 @@ Any exciter can drive any resonator, which gives 25 combinations.
 | Exciter | How it works | Main controls |
 |---|---|---|
 | **Pluck** | Shaped pick/mallet burst (smooth pulse + noise, hardness lowpass) | Hardness, Pick Noise |
-| **Bow** | Stick-slip friction junction | Bow Speed, Rosin, Bow Force, Attack |
-| **Reed** | Pressure-controlled reed valve (reflection table) | Aperture, Reed Stiffness, Breath |
-| **Lips** | Outward-striking lip valve: a damped mass-spring pushed open by mouth pressure, with the flow solved exactly every sample | Lip Tension, Lip Opening, Breath |
-| **Air Jet** | Jet delay with a cubic edge nonlinearity | Jet Reflect, Jet Length, Breath |
+| **Bow** | Stick-slip friction junction | Bow Speed, Rosin, Bow Force, Attack, Bite |
+| **Reed** | Pressure-controlled reed valve (reflection table) | Aperture, Reed Stiffness, Breath, Tongue |
+| **Lips** | Outward-striking lip valve: a damped mass-spring pushed open by mouth pressure, with the flow solved exactly every sample | Lip Tension, Lip Opening, Breath, Tongue |
+| **Air Jet** | Jet delay with a cubic edge nonlinearity | Jet Reflect, Jet Length, Breath, Chiff |
+
+**Bite / Tongue / Chiff** shapes how notes start. It adds a short burst of extra breath or
+bow force and a small pulse that kicks the tube or string straight into its mode, as a
+player's tongue or a firm bow stroke does. On bowed strings the extra force produces the
+scratchy multiple-slip "bite" of a strong stroke, with a prominent 3rd harmonic (an octave
+and a fifth up). On brass it gives the characteristic attack blip.
+
+The **Horn** gets brighter the harder it is blown, like real brass: mellow at low breath
+pressure, brassy and blazing at high pressure (velocity, aftertouch and bite all count).
 
 | Resonator | How it works |
 |---|---|
@@ -53,8 +62,8 @@ save (the disk icon in the plugin window), which writes a `.vstpreset` file.
 The Sitar, Sarangi and Santoor use sympathetic strings tuned to C. Set *Key* to the key
 of your music. The Sitar plays in Legato mode, so overlapping notes slide (meend).
 
-The wind, brass and bowed presets are set up for a keyboard with aftertouch: velocity
-starts the note and key pressure swells it (*AT → Breath* about 50–60 %). Wind and brass
+The wind, brass and bowed presets are set up for a keyboard with aftertouch: they sound
+full without pressing, and key pressure swells them further (*AT → Breath* about 30–35 %). Wind and brass
 presets use Legato mode, so overlapping notes slur. *Brass Scream* and *Sax Growler* also
 push into the Strange knob as you press harder.
 

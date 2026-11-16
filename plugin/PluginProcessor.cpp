@@ -57,6 +57,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout FilamentProcessor::createLay
     l.add (std::make_unique<APF> (id ("shape"),     "Shape",     juce::NormalisableRange<float> (0, 1), 0.5f, percent()));
     l.add (std::make_unique<APF> (id ("pressure"),  "Pressure",  juce::NormalisableRange<float> (0, 1), 0.5f, percent()));
     l.add (std::make_unique<APF> (id ("noise"),     "Noise",     juce::NormalisableRange<float> (0, 1), 0.2f, percent()));
+    l.add (std::make_unique<APF> (id ("bite"),      "Bite",      juce::NormalisableRange<float> (0, 1), 0.5f, percent()));
     l.add (std::make_unique<APF> (id ("attack"),    "Attack",    skewed (0.001f, 2.0f, 0.15f), 0.05f, seconds()));
 
     l.add (std::make_unique<APF> (id ("position"),  "Position",  juce::NormalisableRange<float> (0, 1), 0.5f, percent()));
@@ -113,6 +114,7 @@ FilamentProcessor::FilamentProcessor()
     raw.pressure  = p ("pressure");
     raw.noise     = p ("noise");
     raw.attack    = p ("attack");
+    raw.bite      = p ("bite");
     raw.decay     = p ("decay");
     raw.damping   = p ("damping");
     raw.stiffness = p ("stiffness");
@@ -187,6 +189,7 @@ void FilamentProcessor::applyPreset (int index)
     setParam ("pressure",    p.pressure);
     setParam ("noise",       p.noise);
     setParam ("attack",      p.attack);
+    setParam ("bite",        p.bite);
     setParam ("position",    p.position);
     setParam ("decay",       p.decay);
     setParam ("damping",     p.damping);
@@ -245,6 +248,7 @@ filament::Params FilamentProcessor::readParams() const
     p.pressure     = raw.pressure->load();
     p.noise        = raw.noise->load();
     p.attack       = raw.attack->load();
+    p.bite         = raw.bite->load();
     p.decay        = raw.decay->load();
     p.damping      = raw.damping->load();
     p.stiffness    = raw.stiffness->load();

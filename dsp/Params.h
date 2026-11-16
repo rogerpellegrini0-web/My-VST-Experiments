@@ -47,6 +47,7 @@ struct Params
     float pressure    = 0.5f;   //    -     | bow force | breath         | breath     | breath
     float noise       = 0.2f;   // pick / bow / breath noise
     float attack      = 0.05f;  // seconds, continuous exciters only
+    float bite        = 0.5f;   // 0..1: onset transient (tonguing, bow bite, lip blip)
 
     // Resonator
     float position    = 0.5f;   // excitation point along string / bore (pluck position for tubes)

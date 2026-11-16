@@ -60,65 +60,74 @@ inline std::vector<Preset> factoryPresets()
 
     add ("Realistic", "Cello", [] (Params& p) {
         p.exciter = E::Bow; p.resonator = R::String;
-        p.tone = 0.5f; p.shape = 0.5f; p.pressure = 0.55f; p.noise = 0.15f; p.attack = 0.15f;
+        p.tone = 0.5f; p.shape = 0.5f; p.pressure = 0.75f; p.noise = 0.15f; p.attack = 0.03f;
         p.position = 0.5f; p.decay = 4.0f; p.damping = 0.55f; p.stiffness = 0.08f; p.release = 0.5f;
-        p.vibratoRate = 5.2f; p.vibratoDepth = 0.35f; p.atToBreath = 0.5f;
-        p.bodyMix = 0.55f; p.bodySize = 0.78f; });
+        p.vibratoRate = 5.2f; p.vibratoDepth = 0.35f; p.atToBreath = 0.35f;
+        p.bodyMix = 0.55f; p.bodySize = 0.78f; p.bite = 0.9f;
+        });
 
     add ("Realistic", "Violin", [] (Params& p) {
         p.exciter = E::Bow; p.resonator = R::String;
-        p.tone = 0.55f; p.shape = 0.5f; p.pressure = 0.5f; p.noise = 0.18f; p.attack = 0.1f;
+        p.tone = 0.55f; p.shape = 0.5f; p.pressure = 0.8f; p.noise = 0.18f; p.attack = 0.02f;
         p.position = 0.42f; p.decay = 3.5f; p.damping = 0.5f; p.stiffness = 0.06f; p.release = 0.4f;
-        p.vibratoRate = 5.8f; p.vibratoDepth = 0.4f; p.atToBreath = 0.5f;
-        p.bodyMix = 0.55f; p.bodySize = 0.32f; });
+        p.vibratoRate = 5.8f; p.vibratoDepth = 0.4f; p.atToBreath = 0.35f;
+        p.bodyMix = 0.55f; p.bodySize = 0.32f; p.bite = 1.0f;
+        });
 
     add ("Realistic", "Clarinet", [] (Params& p) {
         p.exciter = E::Reed; p.resonator = R::CylindricalTube;
-        p.tone = 0.5f; p.shape = 0.5f; p.pressure = 0.55f; p.noise = 0.12f; p.attack = 0.05f;
+        p.tone = 0.5f; p.shape = 0.5f; p.pressure = 0.55f; p.noise = 0.12f; p.attack = 0.02f;
         p.damping = 0.45f; p.release = 0.15f;
-        p.vibratoDepth = 0.08f; p.voiceMode = M::Legato; p.glide = 0.03f; p.atToBreath = 0.6f;
-        p.bodyMix = 0.05f; });
+        p.vibratoDepth = 0.08f; p.voiceMode = M::Legato; p.glide = 0.03f; p.atToBreath = 0.35f;
+        p.bodyMix = 0.05f; p.bite = 0.7f;
+        });
 
     add ("Realistic", "Alto Sax", [] (Params& p) {
         p.exciter = E::Reed; p.resonator = R::ConicalTube;
-        p.tone = 0.55f; p.shape = 0.45f; p.pressure = 0.6f; p.noise = 0.2f; p.attack = 0.04f;
+        p.tone = 0.55f; p.shape = 0.45f; p.pressure = 0.6f; p.noise = 0.2f; p.attack = 0.02f;
         p.damping = 0.5f; p.release = 0.15f;
         p.vibratoRate = 5.0f; p.vibratoDepth = 0.25f; p.voiceMode = M::Legato; p.glide = 0.04f;
-        p.atToBreath = 0.6f; p.growl = 0.08f; p.bodyMix = 0.05f; });
+        p.atToBreath = 0.35f; p.growl = 0.08f; p.bodyMix = 0.05f; p.bite = 0.7f;
+        });
 
     add ("Realistic", "Oboe", [] (Params& p) {
         p.exciter = E::Reed; p.resonator = R::ConicalTube;
-        p.tone = 0.42f; p.shape = 0.6f; p.pressure = 0.55f; p.noise = 0.1f; p.attack = 0.05f;
+        p.tone = 0.42f; p.shape = 0.6f; p.pressure = 0.55f; p.noise = 0.1f; p.attack = 0.02f;
         p.position = 0.7f; p.damping = 0.3f; p.release = 0.12f;
         p.vibratoRate = 5.5f; p.vibratoDepth = 0.2f; p.voiceMode = M::Legato; p.glide = 0.02f;
-        p.atToBreath = 0.6f; p.bodyMix = 0.0f; });
+        p.atToBreath = 0.35f; p.bodyMix = 0.0f; p.bite = 0.6f;
+        });
 
     add ("Realistic", "Trumpet", [] (Params& p) {
         p.exciter = E::Lips; p.resonator = R::Horn;
-        p.tone = 0.55f; p.shape = 0.45f; p.pressure = 0.6f; p.noise = 0.1f; p.attack = 0.03f;
-        p.damping = 0.4f; p.release = 0.12f;
-        p.vibratoDepth = 0.12f; p.voiceMode = M::Legato; p.glide = 0.03f; p.atToBreath = 0.6f;
-        p.bodyMix = 0.0f; });
+        p.tone = 0.6f; p.shape = 0.45f; p.pressure = 0.65f; p.noise = 0.1f; p.attack = 0.02f;
+        p.damping = 0.3f; p.release = 0.12f;
+        p.vibratoDepth = 0.12f; p.voiceMode = M::Legato; p.glide = 0.03f; p.atToBreath = 0.3f;
+        p.bodyMix = 0.0f; p.bite = 0.8f;
+        });
 
     add ("Realistic", "French Horn", [] (Params& p) {
         p.exciter = E::Lips; p.resonator = R::Horn;
-        p.tone = 0.4f; p.shape = 0.55f; p.pressure = 0.45f; p.noise = 0.06f; p.attack = 0.07f;
-        p.damping = 0.75f; p.release = 0.25f;
-        p.vibratoDepth = 0.08f; p.voiceMode = M::Legato; p.glide = 0.05f; p.atToBreath = 0.6f;
-        p.bodyMix = 0.2f; p.bodySize = 0.85f; });
+        p.tone = 0.4f; p.shape = 0.55f; p.pressure = 0.45f; p.noise = 0.06f; p.attack = 0.04f;
+        p.damping = 0.6f; p.release = 0.25f;
+        p.vibratoDepth = 0.08f; p.voiceMode = M::Legato; p.glide = 0.05f; p.atToBreath = 0.35f;
+        p.bodyMix = 0.2f; p.bodySize = 0.85f; p.bite = 0.5f;
+        });
 
     add ("Realistic", "Flute", [] (Params& p) {
         p.exciter = E::Jet; p.resonator = R::OpenTube;
-        p.tone = 0.5f; p.shape = 0.5f; p.pressure = 0.55f; p.noise = 0.3f; p.attack = 0.08f;
+        p.tone = 0.5f; p.shape = 0.5f; p.pressure = 0.55f; p.noise = 0.3f; p.attack = 0.04f;
         p.damping = 0.5f; p.release = 0.15f;
         p.vibratoRate = 5.0f; p.vibratoDepth = 0.35f; p.voiceMode = M::Legato; p.glide = 0.03f;
-        p.atToBreath = 0.6f; p.bodyMix = 0.0f; });
+        p.atToBreath = 0.35f; p.bodyMix = 0.0f; p.bite = 0.6f;
+        });
 
     add ("Realistic", "Pan Pipe", [] (Params& p) {
         p.exciter = E::Jet; p.resonator = R::OpenTube;
         p.tone = 0.42f; p.shape = 0.45f; p.pressure = 0.5f; p.noise = 0.55f; p.attack = 0.04f;
         p.damping = 0.65f; p.release = 0.25f;
-        p.vibratoDepth = 0.0f; p.atToBreath = 0.4f; p.bodyMix = 0.0f; });
+        p.vibratoDepth = 0.0f; p.atToBreath = 0.3f; p.bodyMix = 0.0f; p.bite = 0.8f;
+        });
 
     // Instruments built on bridge buzz and sympathetic strings. The Sympathetic Key
     // defaults to C: set it to the key (or drone) of the music.
@@ -138,11 +147,12 @@ inline std::vector<Preset> factoryPresets()
 
     add ("Realistic", "Sarangi", [] (Params& p) {
         p.exciter = E::Bow; p.resonator = R::String;
-        p.tone = 0.5f; p.pressure = 0.55f; p.noise = 0.2f; p.attack = 0.12f;
+        p.tone = 0.5f; p.pressure = 0.7f; p.noise = 0.2f; p.attack = 0.04f;
         p.position = 0.45f; p.decay = 4.0f; p.damping = 0.5f; p.buzz = 0.25f; p.release = 0.5f;
         p.vibratoRate = 5.5f; p.vibratoDepth = 0.35f; p.voiceMode = M::Legato; p.glide = 0.06f;
-        p.atToBreath = 0.5f; p.symMix = 0.5f; p.symTuning = 1; p.symDecay = 6.0f;
-        p.bodyMix = 0.5f; p.bodySize = 0.55f; });
+        p.atToBreath = 0.35f; p.symMix = 0.5f; p.symTuning = 1; p.symDecay = 6.0f;
+        p.bodyMix = 0.5f; p.bodySize = 0.55f; p.bite = 0.8f;
+        });
 
     add ("Realistic", "Santoor", [] (Params& p) {
         p.exciter = E::Pluck; p.resonator = R::String;
@@ -153,10 +163,11 @@ inline std::vector<Preset> factoryPresets()
 
     add ("Realistic", "Dizi", [] (Params& p) {
         p.exciter = E::Jet; p.resonator = R::OpenTube;
-        p.tone = 0.5f; p.shape = 0.5f; p.pressure = 0.55f; p.noise = 0.25f; p.attack = 0.06f;
+        p.tone = 0.5f; p.shape = 0.5f; p.pressure = 0.55f; p.noise = 0.25f; p.attack = 0.03f;
         p.damping = 0.4f; p.buzz = 0.4f; p.release = 0.15f;
         p.vibratoRate = 5.5f; p.vibratoDepth = 0.3f; p.voiceMode = M::Legato; p.glide = 0.03f;
-        p.atToBreath = 0.6f; p.bodyMix = 0.0f; });
+        p.atToBreath = 0.35f; p.bodyMix = 0.0f; p.bite = 0.6f;
+        });
 
     // ------------------------------------------------------------------ Hybrid
     add ("Hybrid", "Bowed Cone", [] (Params& p) {
@@ -193,10 +204,11 @@ inline std::vector<Preset> factoryPresets()
 
     add ("Hybrid", "Kazoo Reed", [] (Params& p) {
         p.exciter = E::Reed; p.resonator = R::ConicalTube;
-        p.tone = 0.55f; p.pressure = 0.6f; p.noise = 0.15f; p.attack = 0.04f;
+        p.tone = 0.55f; p.pressure = 0.6f; p.noise = 0.15f; p.attack = 0.02f;
         p.damping = 0.5f; p.buzz = 0.5f; p.release = 0.15f;
-        p.vibratoDepth = 0.2f; p.voiceMode = M::Legato; p.glide = 0.04f; p.atToBreath = 0.6f;
-        p.bodyMix = 0.05f; });
+        p.vibratoDepth = 0.2f; p.voiceMode = M::Legato; p.glide = 0.04f; p.atToBreath = 0.35f;
+        p.bodyMix = 0.05f; p.bite = 0.6f;
+        });
 
     // ------------------------------------------------------------------ Strange
     add ("Strange", "Bell Garden", [] (Params& p) {
@@ -238,17 +250,19 @@ inline std::vector<Preset> factoryPresets()
 
     add ("Strange", "Brass Scream", [] (Params& p) {
         p.exciter = E::Lips; p.resonator = R::Horn;
-        p.tone = 0.55f; p.shape = 0.5f; p.pressure = 0.6f; p.noise = 0.12f; p.attack = 0.04f;
+        p.tone = 0.55f; p.shape = 0.5f; p.pressure = 0.6f; p.noise = 0.12f; p.attack = 0.02f;
         p.damping = 0.4f; p.release = 0.15f;
         p.vibratoDepth = 0.15f; p.voiceMode = M::Legato; p.glide = 0.05f;
-        p.atToBreath = 0.6f; p.atToStrange = 0.9f; p.exprCurve = -0.3f; p.growl = 0.15f; p.bodyMix = 0.1f; });
+        p.atToBreath = 0.35f; p.atToStrange = 0.9f; p.exprCurve = -0.3f; p.growl = 0.15f; p.bodyMix = 0.1f; p.bite = 0.8f;
+        });
 
     add ("Strange", "Sax Growler", [] (Params& p) {
         p.exciter = E::Reed; p.resonator = R::ConicalTube;
-        p.tone = 0.55f; p.shape = 0.45f; p.pressure = 0.6f; p.noise = 0.25f; p.attack = 0.04f;
+        p.tone = 0.55f; p.shape = 0.45f; p.pressure = 0.6f; p.noise = 0.25f; p.attack = 0.02f;
         p.damping = 0.5f; p.release = 0.15f;
         p.vibratoDepth = 0.2f; p.voiceMode = M::Legato; p.glide = 0.04f;
-        p.atToBreath = 0.6f; p.atToStrange = 0.6f; p.growl = 0.45f; p.strange = 0.15f; p.bodyMix = 0.05f; });
+        p.atToBreath = 0.35f; p.atToStrange = 0.6f; p.growl = 0.45f; p.strange = 0.15f; p.bodyMix = 0.05f; p.bite = 0.7f;
+        });
 
     add ("Strange", "Broken Bugle", [] (Params& p) {
         p.exciter = E::Lips; p.resonator = R::Horn;

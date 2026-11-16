@@ -114,6 +114,15 @@ private:
 
     float outGain = 1.0f;
 
+    // Bite: onset transient of sustained exciters
+    float onset = 1.0f;                           // 1 at note start, decays over ~35 ms
+    int   kickPos = 0, kickLen = 0;               // a short pulse that starts the oscillation
+    float kickAmp = 0.0f;
+
+    // Brass: breath-pressure-dependent brightness of the horn's radiated sound
+    DCBlocker brassHp;                            // 1-pole high-pass feeding the brass shelf
+    float brassShelf = 0.0f, brassGain = 0.0f;
+
     // Strange: per-voice state (see updateControl)
     static constexpr int kNumScramblers = 3;
     float strange = 0.0f;                         // smoothed effective amount

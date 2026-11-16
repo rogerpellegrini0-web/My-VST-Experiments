@@ -41,6 +41,7 @@ namespace
         { "pressure", { "",           "Bow Force",   "Breath",       "Breath",      "Breath" } },
         { "noise",    { "Pick Noise", "Bow Noise",   "Breath Noise", "Breath Noise","Breath Noise" } },
         { "attack",   { "",           "Attack",      "Attack",       "Attack",      "Attack" } },
+        { "bite",     { "",           "Bite",        "Tongue",       "Tongue",      "Chiff" } },
     };
 
     juce::String positionLabel (int exciter, int resonator)
@@ -124,7 +125,7 @@ FilamentEditor::FilamentEditor (FilamentProcessor& p)
     };
 
     sections.push_back ({ "EXCITER",   { make ("tone", "Tone"), make ("shape", "Shape"), make ("pressure", "Pressure"),
-                                         make ("noise", "Noise"), make ("attack", "Attack") }, {} });
+                                         make ("noise", "Noise"), make ("attack", "Attack"), make ("bite", "Bite") }, {} });
     sections.push_back ({ "RESONATOR", { make ("position", "Position"), make ("decay", "Decay"), make ("damping", "Damping"),
                                          make ("stiffness", "Stiffness"), make ("buzz", "Buzz"), make ("release", "Release") }, {} });
     sections.push_back ({ "EXPRESSION", { make ("atBreath", "AT \xe2\x86\x92 Breath"), make ("wheelBreath", "Wheel \xe2\x86\x92 Breath"),

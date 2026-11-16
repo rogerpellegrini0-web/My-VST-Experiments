@@ -75,6 +75,7 @@ private:
         std::atomic<float>* pressure {};
         std::atomic<float>* noise {};
         std::atomic<float>* attack {};
+        std::atomic<float>* bite {};
         std::atomic<float>* decay {};
         std::atomic<float>* damping {};
         std::atomic<float>* stiffness {};

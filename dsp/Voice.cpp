@@ -64,6 +64,7 @@ void Voice::prepare (double sampleRate, uint32_t noiseSeed)
     loopDc.setup (fs, 5.0f);
     outDc.setup (fs, 10.0f);
     energyCoef = (float) (1.0 / (0.005 * fs));
+    brassHp.setup (fs, 1200.0f);
     memCoef = (float) (1.0 / (0.02 * fs));
     noise.seed (noiseSeed);
     reset();
@@ -109,6 +110,8 @@ void Voice::start (int newNote, float vel, const Params& p)
     growl = growlStep = growlPhase = growlWalk = 0.0f;
     guardRms = 0.25f * 0.25f; guardGain = -1.0f;   // set on the first block
     buzzLast = buzzAvg = 0.0f;
+    kickPos = 0; kickLen = 0; onset = 1.0f;
+    brassHp.reset(); brassGain = 0.0f;
     memRms = 0.0f; memHp.reset();
     samplesSinceStart = 0;
     vibPhase = 0.0f;
@@ -221,7 +224,10 @@ void Voice::setupExciter (const Params& p, float f, float period)
             break;
 
         case Exciter::Bow:
-            shapeA    = knob3 (p.pressure, 5.0f, 3.0f, 1.2f);   // friction curve slope (force)
+            // Bite: extra bow force at the start of the stroke. The string briefly slips
+            // several times per cycle before settling into Helmholtz motion, which gives
+            // the scratchy "bite" with strong upper harmonics (notably the 3rd, a twelfth up).
+            shapeA    = knob3 (p.pressure, 5.0f, 3.0f, 1.2f) * (1.0f - 0.6f * p.bite * onset);
             shapeB    = knob3 (p.shape, 0.9f, 0.75f, 0.6f);     // stick threshold (rosin)
             maxDrive  = (0.03f + 0.2f * amp) * knob3 (p.tone, 0.4f, 1.0f, 1.8f);
             noiseGain = p.noise * 0.3f;
@@ -414,12 +420,12 @@ void Voice::updateControl (const Params& p, const VoiceMod& mod, int chunk)
     }
 
     // Vibrato: fades in after the attack, mod wheel adds depth.
-    const float onset = clampf ((t - 0.15f) / 0.45f, 0.0f, 1.0f);
+    const float vibOnset = clampf ((t - 0.15f) / 0.45f, 0.0f, 1.0f);
     const float depth = p.vibratoDepth * p.vibratoDepth * 0.5f + mod.wheel * p.wheelToVibrato * 0.4f;   // semitones
     vibPhase += kTwoPi * p.vibratoRate * (float) chunk / (float) fs;
     if (vibPhase > kTwoPi) vibPhase -= kTwoPi;
 
-    const float semis = pitch - 69.0f + mod.bendSemis + depth * onset * std::sin (vibPhase);
+    const float semis = pitch - 69.0f + mod.bendSemis + depth * vibOnset * std::sin (vibPhase);
     const float f     = clampf (noteToHz (semis), 20.0f, (float) fs / 8.0f);
     const float w     = kTwoPi * f / (float) fs;
     float period      = (float) fs / f;
@@ -456,8 +462,8 @@ void Voice::updateControl (const Params& p, const VoiceMod& mod, int chunk)
     }
     else if (exciter == Exciter::Reed && resonator == Resonator::ConicalTube)
     {
-        // The reed sharpens the cone's top register (measured: ~ 8.5 cents x (f / 1 kHz)^2).
-        boreScale = std::exp2 (8.5f * (f / 1000.0f) * (f / 1000.0f) / 1200.0f);
+        // The reed sharpens the cone's top register (measured: ~ 6.5 cents x (f / 1 kHz)^2).
+        boreScale = std::exp2 (6.5f * (f / 1000.0f) * (f / 1000.0f) / 1200.0f);
     }
     period *= boreScale;
 
@@ -539,7 +545,35 @@ void Voice::updateControl (const Params& p, const VoiceMod& mod, int chunk)
     // a quiet note instead of no note.
     static constexpr float kThreshold[kNumExciters] = { 0.0f, 0.0f, 0.85f, 0.1f, 0.7f };
     const float thr = kThreshold[(int) exciter];
-    const float targetDrive = maxDrive * (thr + (1.0f - thr) * expr) * strangePush;
+    // Bite: a short overshoot of breath / bow speed / lip pressure at the start of the note
+    static constexpr float kBite[kNumExciters] = { 0.0f, 1.0f, 0.6f, 1.0f, 0.8f };
+    const float targetDrive = maxDrive * (thr + (1.0f - thr) * expr) * strangePush
+                            * (1.0f + kBite[(int) exciter] * p.bite * onset);
+
+    // ...and a short pulse into the resonator on the first block, so the oscillation starts
+    // in its mode straight away instead of growing out of nothing (tonguing / bow bite).
+    if (firstControl && exciter != Exciter::Pluck)
+    {
+        // measured per exciter: reeds need a strong one-period kick to start within ~30 ms;
+        // brass already "blips" from its breath overshoot, so its kick is small
+        static constexpr float kKick[kNumExciters]       = { 0.0f, 1.5f,  1.5f, 0.3f,  1.0f };
+        static constexpr float kKickPeriods[kNumExciters] = { 0.0f, 0.25f, 1.0f, 0.25f, 1.0f };
+        kickPos = 0;
+        kickLen = std::max (8, (int) (kKickPeriods[(int) exciter] * period));
+        kickAmp = p.bite * maxDrive * (twoSegment ? 0.5f : 1.0f) * kKick[(int) exciter];
+    }
+    onset = std::exp (-(float) ((double) (samplesSinceStart + chunk) / (0.035 * fs)));
+
+    // Brassiness: in a long, narrow horn at high pressure the wave steepens on its way to
+    // the bell, so the harder brass is blown the brighter it gets (pp mellow, ff blazing).
+    // Modelled as a breath-pressure-dependent high shelf on the radiated sound. (A literal
+    // steepening delay was tried: it added subharmonic artefacts and little brightness.)
+    if (resonator == Resonator::Horn)
+    {
+        const float blow = clampf (targetDrive / 0.6f, 0.0f, 1.6f);   // ~1 = full velocity, mid breath knob
+        brassShelf = 2.8f * blow * blow;
+    }
+    else brassShelf = 0.0f;
     exprAmp = clampf (expr / 0.25f, 0.0f, 1.0f);
 
     // Growl: an irregular ~25-40 Hz throat flutter on the drive.
@@ -683,8 +717,10 @@ void Voice::renderSamples (float* out, int n) noexcept
             x = reflFar;
         }
 
-        // 2. exciter
-        const float d = excite (x);
+        // 2. exciter (plus the bite pulse at note start)
+        float d = excite (x);
+        if (kickPos < kickLen)
+            d += kickAmp * std::sin (kPi * (float) kickPos++ / (float) kickLen);
 
         // 3. scatter
         if (twoSegment)
@@ -733,6 +769,14 @@ void Voice::render (float* out, int numSamples, const Params& p, const VoiceMod&
         guardTarget *= exprAmp;
         if (guardGain < 0.0f) guardGain = guardTarget;
         const float guardStep = (guardTarget - guardGain) / (float) chunk;
+
+        if (brassShelf > 0.0f || brassGain > 0.0f)
+            for (int i = 0; i < chunk; ++i)
+            {
+                // pressure-dependent high shelf (+ up to ~12 dB above ~1.2 kHz at ff)
+                brassGain += (brassShelf - brassGain) * 0.002f;
+                tmp[i] = (tmp[i] + brassGain * brassHp.process (tmp[i])) / (1.0f + 0.25f * brassGain);
+            }
 
         if (membrane > 0.0f)
             for (int i = 0; i < chunk; ++i)

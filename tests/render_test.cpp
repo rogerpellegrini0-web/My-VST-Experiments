@@ -53,9 +53,18 @@ static void writeWav (const std::string& path, const std::vector<float>& L, cons
     }
 }
 
-// YIN fundamental-frequency estimate.
-static double estimatePitch (const float* x, int n, double fs)
+// YIN fundamental-frequency estimate. The analysis copy is low-passed (two one-pole stages
+// at 3 kHz) so very bright sounds (ff brass, buzz) don't produce octave errors; this does
+// not change the measured period.
+static double estimatePitch (const float* xIn, int n, double fs)
 {
+    std::vector<float> lp ((size_t) n);
+    {
+        const double r = std::exp (-2.0 * (double) kPi * 3000.0 / fs);
+        double z1 = 0, z2 = 0;
+        for (int i = 0; i < n; ++i) { z1 = (1 - r) * xIn[i] + r * z1; z2 = (1 - r) * z1 + r * z2; lp[(size_t) i] = (float) z2; }
+    }
+    const float* x = lp.data();
     const int tauMin = (int) (fs / 4500.0), tauMax = std::min (n / 2, (int) (fs / 35.0));
     const int W = n - tauMax;
     std::vector<double> d ((size_t) tauMax + 2, 0.0), c ((size_t) tauMax + 2, 1.0);
@@ -510,12 +519,32 @@ int main (int argc, char** argv)
             finite = finite && allFinite (L);
             released = released && eng.activeVoiceCount() == 0;
         }
+        // attack: sustained realistic presets must speak quickly (level stays within 3 dB
+        // of its final value from this point on), averaged over notes
+        double settle = 0;
+        if (std::string (preset.category) == "Realistic" && preset.params.exciter != Exciter::Pluck)
+        {
+            int n = 0;
+            for (int note : { 48, 60, 72 })
+            {
+                Params pp = preset.params; pp.symMix = 0; pp.vibratoDepth = 0;
+                Engine eng; eng.prepare (fs, 64); eng.setParams (pp);
+                Render rr = renderNote (eng, note, 0.85f, fs, 1.4, 0.0);
+                auto lv = [&] (double a, double b) { double r = 0; for (int i = (int) (a * fs); i < (int) (b * fs); ++i) r += (double) rr.L[(size_t) i] * rr.L[(size_t) i];
+                                                     return 10.0 * std::log10 (r / ((b - a) * fs) + 1e-20); };
+                const double fin = lv (1.2, 1.4); double t = 0;
+                for (int k = 0; k < 110; ++k) if (lv (k * 0.01, k * 0.01 + 0.01) < fin - 3.0) t = (k + 1) * 0.01;
+                settle += t; ++n;
+            }
+            settle /= n;
+        }
         const bool pitched = std::string (preset.category) != "Strange";
         const bool ok = finite && released && levels[0] > -38.0 && levels[1] > -38.0
-                        && levels[0] < -5.0 && levels[1] < -5.0 && (! pitched || worstCents < 15.0);
+                        && levels[0] < -5.0 && levels[1] < -5.0 && (! pitched || worstCents < 15.0) && settle < 0.2;
         if (! ok) ++failures;
-        std::printf ("  %-9s %-20s level %6.1f / %6.1f dB   %s  %s\n", preset.category, preset.name, levels[0], levels[1],
+        std::printf ("  %-9s %-20s level %6.1f / %6.1f dB   %s  %s  %s\n", preset.category, preset.name, levels[0], levels[1],
                      pitched ? (std::string ("pitch err ") + std::to_string ((int) std::lround (worstCents)) + "c").c_str() : "           ",
+                     settle > 0 ? (std::string ("speaks in ") + std::to_string ((int) std::lround (settle * 1000)) + " ms").c_str() : "                ",
                      ok ? "ok" : "FAIL");
     }
 
