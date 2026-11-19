@@ -7,7 +7,8 @@
 #include "Presets.h"
 
 class FilamentProcessor final : public juce::AudioProcessor,
-                                private juce::AudioProcessorValueTreeState::Listener
+                                private juce::AudioProcessorValueTreeState::Listener,
+                                private juce::AsyncUpdater
 {
 public:
     FilamentProcessor();
@@ -28,10 +29,12 @@ public:
     bool isMidiEffect() const override { return false; }
     double getTailLengthSeconds() const override { return 8.0; }   // sympathetic strings ring on
 
-    int getNumPrograms() override { return 1; }
-    int getCurrentProgram() override { return 0; }
-    void setCurrentProgram (int) override {}
-    const juce::String getProgramName (int) override { return "Default"; }
+    // The factory presets are published as programs, so MIDI Program Change (which Cubase
+    // turns into "select program N" for VST3 instruments) picks presets.
+    int getNumPrograms() override { return (int) presets.size(); }
+    int getCurrentProgram() override { return currentPreset.load(); }
+    void setCurrentProgram (int index) override;
+    const juce::String getProgramName (int index) override;
     void changeProgramName (int, const juce::String&) override {}
 
     void getStateInformation (juce::MemoryBlock& destData) override;
@@ -56,6 +59,9 @@ private:
 
     std::vector<filament::Preset> presets = filament::factoryPresets();
     std::atomic<bool> presetModified { false };
+    std::atomic<int>  currentPreset { 0 };      // readable from any thread
+    std::atomic<int>  pendingProgram { -1 };    // program change waiting for the message thread
+    void handleAsyncUpdate() override;
     bool applyingPreset = false;
 
     filament::Params readParams() const;

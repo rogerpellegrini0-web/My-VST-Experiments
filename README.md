@@ -70,6 +70,33 @@ push into the Strange knob as you press harder.
 Every preset is checked by the test suite: stable, releases cleanly, sensible level with
 and without aftertouch, and the realistic and hybrid ones in tune.
 
+### Selecting presets with MIDI Program Change
+
+The presets are also published as programs, so a Program Change from your keyboard (or a
+program-change event in a Cubase part) selects them. Program 1 is Init, 2 is Nylon Guitar,
+and so on. This uses the 1–128 numbering most keyboards display. If yours counts from 0,
+subtract one. Program numbers beyond the list are ignored. In Cubase the presets also
+appear in the instrument track's *Programs* field in the Inspector.
+
+Re-sending the program that's already loaded does nothing, so Cubase re-sending the saved
+program when a project opens never wipes your edits.
+
+| # | Preset | # | Preset | # | Preset |
+|---|---|---|---|---|---|
+| 1 | Init | 14 | Pan Pipe | 27 | Gong Bloom |
+| 2 | Nylon Guitar | 15 | Sitar | 28 | Underwater Plates |
+| 3 | Steel Guitar | 16 | Tanpura | 29 | Glass Bow |
+| 4 | Concert Harp | 17 | Sarangi | 30 | Bowed Metal |
+| 5 | Hammered Dulcimer | 18 | Santoor | 31 | E-Bow Drone |
+| 6 | Cello | 19 | Dizi | 32 | Brass Scream |
+| 7 | Violin | 20 | Bowed Cone | 33 | Sax Growler |
+| 8 | Clarinet | 21 | Reed Fiddle | 34 | Broken Bugle |
+| 9 | Alto Sax | 22 | Plucked Horn | 35 | Chaos Choir |
+| 10 | Oboe | 23 | Brass Strings | 36 | Jawari Halo |
+| 11 | Trumpet | 24 | Air Clarinet | 37 | Buzz Reed Drone |
+| 12 | French Horn | 25 | Kazoo Reed | | |
+| 13 | Flute | 26 | Bell Garden | | |
+
 ## Playing it from a keyboard
 
 - **Mode:** *Poly* (16 voices), *Mono* (one voice, every note re-articulates) or

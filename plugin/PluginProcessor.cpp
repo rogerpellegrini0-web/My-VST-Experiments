@@ -220,6 +220,33 @@ void FilamentProcessor::applyPreset (int index)
 
     apvts.state.setProperty ("presetName", juce::String (presets[(size_t) index].name), nullptr);
     presetModified = false;
+    currentPreset = index;
+    updateHostDisplay (juce::AudioProcessorListener::ChangeDetails().withProgramChanged (true));
+}
+
+const juce::String FilamentProcessor::getProgramName (int index)
+{
+    return juce::isPositiveAndBelow (index, (int) presets.size()) ? juce::String (presets[(size_t) index].name)
+                                                                  : juce::String();
+}
+
+// Called by the host for a program change, possibly on the audio thread. The preset is
+// applied later on the message thread. Selecting the preset that is already loaded does
+// nothing: hosts re-send the saved program when a project is reopened, and that must not
+// wipe the user's edits.
+void FilamentProcessor::setCurrentProgram (int index)
+{
+    if (! juce::isPositiveAndBelow (index, (int) presets.size())) return;
+    if (index == currentPreset.load() && pendingProgram.load() < 0) return;
+    pendingProgram = index;
+    triggerAsyncUpdate();
+}
+
+void FilamentProcessor::handleAsyncUpdate()
+{
+    const int index = pendingProgram.exchange (-1);
+    if (index >= 0 && index != currentPreset.load())
+        applyPreset (index);
 }
 
 bool FilamentProcessor::isBusesLayoutSupported (const BusesLayout& layouts) const
@@ -290,6 +317,7 @@ void FilamentProcessor::handleMidi (const juce::MidiMessage& m)
     else if (m.isAftertouch())          engine.setPolyPressure (m.getNoteNumber(), (float) m.getAfterTouchValue() / 127.0f);
     else if (m.isAllNotesOff())         engine.allNotesOff();
     else if (m.isAllSoundOff())         engine.reset();
+    else if (m.isProgramChange())       setCurrentProgram (m.getProgramChangeNumber());   // raw MIDI (standalone, some hosts)
 }
 
 void FilamentProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midi)
@@ -342,6 +370,9 @@ void FilamentProcessor::setStateInformation (const void* data, int sizeInBytes)
     if (auto xml = getXmlFromBinary (data, sizeInBytes))
         if (xml->hasTagName (apvts.state.getType()))
         {
+            // a project being restored wins over a program change still waiting to be applied
+            pendingProgram = -1;
+            cancelPendingUpdate();
             migrateFromV1 (*xml);
             apvts.replaceState (juce::ValueTree::fromXml (*xml));
             // projects from before presets existed: show as a modified Init
@@ -357,6 +388,8 @@ void FilamentProcessor::setStateInformation (const void* data, int sizeInBytes)
                 const int i = juce::jlimit (0, 29, (int) apvts.state.getProperty ("presetIndex"));
                 apvts.state.setProperty ("presetName", juce::String (v05[i]), nullptr);
             }
+            currentPreset = getPresetIndex();
+            updateHostDisplay (juce::AudioProcessorListener::ChangeDetails().withProgramChanged (true));
         }
 }
 
