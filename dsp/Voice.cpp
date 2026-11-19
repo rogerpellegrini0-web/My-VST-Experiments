@@ -110,7 +110,7 @@ void Voice::start (int newNote, float vel, const Params& p)
     growl = growlStep = growlPhase = growlWalk = 0.0f;
     guardRms = 0.25f * 0.25f; guardGain = -1.0f;   // set on the first block
     buzzLast = buzzAvg = 0.0f;
-    kickPos = 0; kickLen = 0; onset = 1.0f;
+    kickPos = 0; kickLen = 0; onset = 1.0f; kickPending = true; onsetStart = 0;
     brassHp.reset(); brassGain = 0.0f;
     memRms = 0.0f; memHp.reset();
     samplesSinceStart = 0;
@@ -135,6 +135,13 @@ void Voice::retrigger (float vel, const Params& p)
     gate = true;
     if (exciter == Exciter::Pluck)
         buildPluckExcitation (vel, p);   // re-pluck on top of the still-ringing resonator
+    else
+    {
+        // a re-articulated note (not a legato slur) is tongued / bitten again
+        kickPending = true;
+        onsetStart  = samplesSinceStart;
+        onset       = 1.0f;
+    }
 }
 
 void Voice::retriggerTo (int newNote, float vel, const Params& p)
@@ -227,7 +234,7 @@ void Voice::setupExciter (const Params& p, float f, float period)
             // Bite: extra bow force at the start of the stroke. The string briefly slips
             // several times per cycle before settling into Helmholtz motion, which gives
             // the scratchy "bite" with strong upper harmonics (notably the 3rd, a twelfth up).
-            shapeA    = knob3 (p.pressure, 5.0f, 3.0f, 1.2f) * (1.0f - 0.6f * p.bite * onset);
+            shapeA    = knob3 (p.pressure, 5.0f, 3.0f, 1.2f) * (1.0f - 0.6f * biteEff * onset);
             shapeB    = knob3 (p.shape, 0.9f, 0.75f, 0.6f);     // stick threshold (rosin)
             maxDrive  = (0.03f + 0.2f * amp) * knob3 (p.tone, 0.4f, 1.0f, 1.8f);
             noiseGain = p.noise * 0.3f;
@@ -467,7 +474,12 @@ void Voice::updateControl (const Params& p, const VoiceMod& mod, int chunk)
     }
     period *= boreScale;
 
-    attackInc   = 1.0f / (float) (std::max (0.001f, p.attack) * fs);
+    // Velocity -> Bite: at 0 the Bite knob applies as is; at 100 % it is the maximum,
+    // reached at full velocity, and soft notes start gently. Hard notes also start faster.
+    const float vb  = clampf (p.velToBite, 0.0f, 1.0f);
+    const float vel = clampf (velocity, 0.0f, 1.0f);
+    biteEff = clampf (p.bite, 0.0f, 1.0f) * ((1.0f - vb) + vb * vel * std::sqrt (vel));
+    attackInc   = 1.0f / (float) (std::max (0.001f, p.attack * (1.0f - 0.5f * vb * vel)) * fs);
     releaseCoef = (float) std::exp (-6.9 / (std::max (0.005f, p.release) * fs));
 
     // --- Strange stages 2 and 3 (stage 1, extra stiffness, lives in setupResonator)
@@ -548,11 +560,11 @@ void Voice::updateControl (const Params& p, const VoiceMod& mod, int chunk)
     // Bite: a short overshoot of breath / bow speed / lip pressure at the start of the note
     static constexpr float kBite[kNumExciters] = { 0.0f, 1.0f, 0.6f, 1.0f, 0.8f };
     const float targetDrive = maxDrive * (thr + (1.0f - thr) * expr) * strangePush
-                            * (1.0f + kBite[(int) exciter] * p.bite * onset);
+                            * (1.0f + kBite[(int) exciter] * biteEff * onset);
 
     // ...and a short pulse into the resonator on the first block, so the oscillation starts
     // in its mode straight away instead of growing out of nothing (tonguing / bow bite).
-    if (firstControl && exciter != Exciter::Pluck)
+    if (kickPending && exciter != Exciter::Pluck)
     {
         // measured per exciter: reeds need a strong one-period kick to start within ~30 ms;
         // brass already "blips" from its breath overshoot, so its kick is small
@@ -560,9 +572,10 @@ void Voice::updateControl (const Params& p, const VoiceMod& mod, int chunk)
         static constexpr float kKickPeriods[kNumExciters] = { 0.0f, 0.25f, 1.0f, 0.25f, 1.0f };
         kickPos = 0;
         kickLen = std::max (8, (int) (kKickPeriods[(int) exciter] * period));
-        kickAmp = p.bite * maxDrive * (twoSegment ? 0.5f : 1.0f) * kKick[(int) exciter];
+        kickAmp = biteEff * maxDrive * (twoSegment ? 0.5f : 1.0f) * kKick[(int) exciter];
+        kickPending = false;
     }
-    onset = std::exp (-(float) ((double) (samplesSinceStart + chunk) / (0.035 * fs)));
+    onset = std::exp (-(float) ((double) (samplesSinceStart - onsetStart + chunk) / (0.035 * fs)));
 
     // Brassiness: in a long, narrow horn at high pressure the wave steepens on its way to
     // the bell, so the harder brass is blown the brighter it gets (pp mellow, ff blazing).

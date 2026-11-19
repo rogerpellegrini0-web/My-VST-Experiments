@@ -61,6 +61,7 @@ struct Params
     float vibratoDepth = 0.15f; // 0..1
     float bendRange    = 2.0f;  // semitones
     float velocitySens = 0.7f;  // 0..1
+    float velToBite    = 0.0f;  // 0..1: how much velocity scales Bite (and quickens the attack)
 
     // Playing
     VoiceMode voiceMode = VoiceMode::Poly;

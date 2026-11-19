@@ -105,6 +105,11 @@ program when a project opens never wipes your edits.
   last note pressed sounds, and releasing it falls back to a key still held.
   A legato *pluck* is a hammer-on / pull-off.
 - **Glide:** portamento time in Mono and Legato.
+- **Vel → Bite:** how much velocity controls Bite and the attack time. At 0 % Bite is
+  the same for every note. At 100 % the Bite knob is the maximum, reached at full velocity:
+  soft notes are breathed or bowed in gently, hard notes are tongued or bitten and start
+  faster (the attack time shortens by up to half). Re-articulated notes in Mono mode get a
+  fresh bite. Legato slurs get none, as on the real instrument.
 - **AT → Breath:** how much aftertouch (channel or polyphonic) controls the drive of
   the sustained exciters: breath for reed, lips and jet, bow speed for the bow.
   At 0 % the drive is fixed. At 100 % you play the dynamics entirely with key

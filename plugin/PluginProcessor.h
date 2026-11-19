@@ -91,6 +91,7 @@ private:
         std::atomic<float>* bendRange {};
         std::atomic<float>* velSens {};
         std::atomic<float>* voiceMode {};
+        std::atomic<float>* velBite {};
         std::atomic<float>* glide {};
         std::atomic<float>* atBreath {};
         std::atomic<float>* wheelBreath {};

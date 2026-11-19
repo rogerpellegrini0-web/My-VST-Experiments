@@ -475,6 +475,30 @@ int main (int argc, char** argv)
         check (off < -150.0, "sympathetic: Mix 0 adds nothing");
     }
 
+    // ---------------------------------------------------------------- velocity -> bite
+    std::printf ("\n== Velocity to Bite ==\n");
+    {
+        const double fs = 48000.0;
+        auto speaks = [&] (float vel, float vb) {
+            double sum = 0;
+            for (int note : { 55, 62, 69 })
+            {
+                Params p = comboParams (2, 1); p.vibratoDepth = 0; p.bodyMix = 0; p.attack = 0.02f; p.bite = 0.7f; p.velToBite = vb;
+                Engine eng; eng.prepare (fs, 64); eng.setParams (p);
+                Render rr = renderNote (eng, note, vel, fs, 1.0, 0.0);
+                auto lv = [&] (double a, double b) { double r = 0; for (int i = (int) (a * fs); i < (int) (b * fs); ++i) r += (double) rr.L[(size_t) i] * rr.L[(size_t) i];
+                                                     return 10.0 * std::log10 (r / ((b - a) * fs) + 1e-20); };
+                const double fin = lv (0.8, 1.0); double t = 0;
+                for (int k = 0; k < 80; ++k) if (lv (k * 0.01, k * 0.01 + 0.01) < fin - 3.0) t = (k + 1) * 0.01;
+                sum += t;
+            }
+            return sum / 3.0; };
+        const double off3 = speaks (0.3f, 0.0f), off10 = speaks (1.0f, 0.0f), on3 = speaks (0.3f, 0.7f), on10 = speaks (1.0f, 0.7f);
+        std::printf ("  reed/cylinder speaks in: Vel->Bite 0%%: %.0f / %.0f ms (soft / hard); 70%%: %.0f / %.0f ms\n", off3 * 1000, off10 * 1000, on3 * 1000, on10 * 1000);
+        if (! (std::fabs (off3 - off10) < 0.015 && on3 > on10 + 0.03)) ++failures;
+        std::printf ("  %-58s %s\n", "Vel->Bite: hard notes start faster than soft ones", (std::fabs (off3 - off10) < 0.015 && on3 > on10 + 0.03) ? "ok" : "FAIL");
+    }
+
     // ---------------------------------------------------------------- presets
     std::printf ("\n== Factory presets (phrase G3 C4 G4 C5; no pressure / full pressure) ==\n");
     for (const auto& preset : factoryPresets())

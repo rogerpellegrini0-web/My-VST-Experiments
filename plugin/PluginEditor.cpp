@@ -131,7 +131,8 @@ FilamentEditor::FilamentEditor (FilamentProcessor& p)
     sections.push_back ({ "EXPRESSION", { make ("atBreath", "AT \xe2\x86\x92 Breath"), make ("wheelBreath", "Wheel \xe2\x86\x92 Breath"),
                                           make ("exprCurve", "Curve"), make ("growl", "Growl"), make ("atStrange", "AT \xe2\x86\x92 Strange"),
                                           make ("wheelVib", "Wheel \xe2\x86\x92 Vib") }, {} });
-    sections.push_back ({ "PLAY",       { make ("glide", "Glide"), make ("bendRange", "Bend"), make ("velSens", "Vel Sens") }, {} });
+    sections.push_back ({ "PLAY",       { make ("glide", "Glide"), make ("bendRange", "Bend"), make ("velSens", "Vel Sens"),
+                                          make ("velBite", "Vel \xe2\x86\x92 Bite") }, {} });
     sections.back().extras = { { &modeLabel, &modeBox } };
     sections.push_back ({ "VIBRATO",    { make ("vibRate", "Rate"), make ("vibDepth", "Depth") }, {} });
     sections.push_back ({ "STRANGE",    { make ("strange", "Strange") }, {} });
@@ -294,6 +295,7 @@ void FilamentEditor::updateForModel()
     setLabel ("exprCurve",   sustained ? juce::String ("Curve") : juce::String());
     setLabel ("growl",       sustained ? juce::String ("Growl") : juce::String());
     setLabel ("glide",       currentMode != 0 ? juce::String ("Glide") : juce::String());
+    setLabel ("velBite",     sustained ? juce::String::fromUTF8 ("Vel \xe2\x86\x92 Bite") : juce::String());
     repaint();
 }
 

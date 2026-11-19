@@ -116,7 +116,10 @@ private:
 
     // Bite: onset transient of sustained exciters
     float onset = 1.0f;                           // 1 at note start, decays over ~35 ms
+    float biteEff = 0.0f;                         // Bite after velocity scaling
+    bool  kickPending = true;                     // a fresh articulation still to kick
     int   kickPos = 0, kickLen = 0;               // a short pulse that starts the oscillation
+    int64_t onsetStart = 0;                       // sample position of the last articulation
     float kickAmp = 0.0f;
 
     // Brass: breath-pressure-dependent brightness of the horn's radiated sound

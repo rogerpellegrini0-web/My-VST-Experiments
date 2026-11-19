@@ -71,6 +71,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout FilamentProcessor::createLay
     l.add (std::make_unique<APF> (id ("bendRange"), "Bend Range",    juce::NormalisableRange<float> (0, 24, 1), 2.0f, withSuffix (" st", 0)));
     l.add (std::make_unique<APF> (id ("velSens"),   "Velocity Sens", juce::NormalisableRange<float> (0, 1), 0.7f, percent()));
 
+    l.add (std::make_unique<APF> (id ("velBite"),   "Velocity to Bite", juce::NormalisableRange<float> (0, 1), 0.0f, percent()));
     l.add (std::make_unique<juce::AudioParameterChoice> (id ("voiceMode"), "Voice Mode", juce::StringArray { "Poly", "Mono", "Legato" }, 0));
     l.add (std::make_unique<APF> (id ("glide"),     "Glide",     skewed (0.0f, 2.0f, 0.25f), 0.0f, seconds()));
 
@@ -124,6 +125,7 @@ FilamentProcessor::FilamentProcessor()
     raw.bendRange = p ("bendRange");
     raw.velSens   = p ("velSens");
     raw.voiceMode = p ("voiceMode");
+    raw.velBite   = p ("velBite");
     raw.glide     = p ("glide");
     raw.atBreath  = p ("atBreath");
     raw.wheelBreath = p ("wheelBreath");
@@ -201,6 +203,7 @@ void FilamentProcessor::applyPreset (int index)
     setParam ("velSens",     p.velocitySens);
     setParam ("voiceMode",   (float) (int) p.voiceMode);
     setParam ("glide",       p.glide);
+    setParam ("velBite",     p.velToBite);
     setParam ("atBreath",    p.atToBreath);
     setParam ("wheelBreath", p.wheelToBreath);
     setParam ("wheelVib",    p.wheelToVibrato);
@@ -286,6 +289,7 @@ filament::Params FilamentProcessor::readParams() const
     p.velocitySens = raw.velSens->load();
     p.voiceMode    = (filament::VoiceMode) juce::jlimit (0, 2, (int) raw.voiceMode->load());
     p.glide        = raw.glide->load();
+    p.velToBite    = raw.velBite->load();
     p.atToBreath   = raw.atBreath->load();
     p.wheelToBreath  = raw.wheelBreath->load();
     p.wheelToVibrato = raw.wheelVib->load();
