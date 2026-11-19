@@ -81,6 +81,11 @@ appear in the instrument track's *Programs* field in the Inspector.
 Re-sending the program that's already loaded does nothing, so Cubase re-sending the saved
 program when a project opens never wipes your edits.
 
+*Technical note:* JUCE 8.0.10 answers the VST3 host's MIDI-mapping question for Program
+Change incorrectly (it reads past the end of its controller table), so Cubase sent Program
+Change to the wrong parameter. `patches/juce-vst3-program-change.patch` fixes this, and the
+build applies it automatically.
+
 | # | Preset | # | Preset | # | Preset |
 |---|---|---|---|---|---|
 | 1 | Init | 14 | Pan Pipe | 27 | Gong Bloom |

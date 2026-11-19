@@ -1,0 +1,28 @@
+diff --git a/modules/juce_audio_plugin_client/juce_audio_plugin_client_VST3.cpp b/modules/juce_audio_plugin_client/juce_audio_plugin_client_VST3.cpp
+index 049baf7..719b343 100644
+--- a/modules/juce_audio_plugin_client/juce_audio_plugin_client_VST3.cpp
++++ b/modules/juce_audio_plugin_client/juce_audio_plugin_client_VST3.cpp
+@@ -1260,6 +1260,23 @@ public:
+                                                     [[maybe_unused]] Vst::ParamID& resultID) override
+     {
+        #if JUCE_VST3_EMULATE_MIDI_CC_WITH_PARAMETERS
++        // MIDI Program Change (kCtrlProgramChange) lies outside the CC table: route it to the
++        // program parameter, so hosts such as Cubase can switch programs from MIDI.
++        if (midiControllerNumber == Vst::kCtrlProgramChange)
++        {
++            if (audioProcessor != nullptr && audioProcessor->get()->getNumPrograms() > 1)
++            {
++                resultID = audioProcessor->getProgramParamID();
++                return kResultTrue;
++            }
++
++            return kResultFalse;
++        }
++
++        if (! isPositiveAndBelow ((int) channel, (int) numMIDIChannels)
++            || ! isPositiveAndBelow ((int) midiControllerNumber, (int) Vst::kCountCtrlNumber))
++            return kResultFalse;
++
+         resultID = midiControllerToParameter[channel][midiControllerNumber];
+         return kResultTrue; // Returning false makes some hosts stop asking for further MIDI Controller Assignments
+        #else

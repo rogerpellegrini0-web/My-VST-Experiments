@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.22)
 
-project(Filament VERSION 0.7.2 LANGUAGES C CXX)
+project(Filament VERSION 0.7.3 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -36,14 +36,23 @@ endif()
 # ---------------------------------------------------------------------------
 # Plugin
 if(FILAMENT_BUILD_PLUGIN)
+    # JUCE 8.0.10 answers the VST3 host's "which parameter handles MIDI Program Change?"
+    # (IMidiMapping, kCtrlProgramChange) by reading past the end of its controller table,
+    # so Cubase sends Program Change to a wrong parameter. This patch routes it to the
+    # program parameter. It is applied automatically (and only once).
+    set(FILAMENT_JUCE_PATCH ${CMAKE_CURRENT_SOURCE_DIR}/patches/juce-vst3-program-change.patch)
     if(FILAMENT_JUCE_PATH)
+        execute_process(COMMAND ${CMAKE_COMMAND} -DPATCH=${FILAMENT_JUCE_PATCH} -DSOURCE_DIR=${FILAMENT_JUCE_PATH}
+                                -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/ApplyPatchOnce.cmake)
         add_subdirectory(${FILAMENT_JUCE_PATH} JUCE EXCLUDE_FROM_ALL)
     else()
         include(FetchContent)
         FetchContent_Declare(JUCE
             GIT_REPOSITORY https://github.com/juce-framework/JUCE.git
             GIT_TAG        8.0.10
-            GIT_SHALLOW    TRUE)
+            GIT_SHALLOW    TRUE
+            PATCH_COMMAND  ${CMAKE_COMMAND} -DPATCH=${FILAMENT_JUCE_PATCH} -DSOURCE_DIR=<SOURCE_DIR>
+                           -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/ApplyPatchOnce.cmake)
         FetchContent_MakeAvailable(JUCE)
     endif()
 
