@@ -88,3 +88,7 @@ if(FILAMENT_BUILD_PLUGIN)
             juce::juce_recommended_lto_flags
             juce::juce_recommended_warning_flags)
 endif()
+
+# ---------------------------------------------------------------------------
+# Sixteen: 16-channel vocoder (its plugin target is added when JUCE is available)
+add_subdirectory(vocoder)

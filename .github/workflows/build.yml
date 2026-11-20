@@ -16,7 +16,7 @@ jobs:
         run: cmake -B build -A x64
 
       - name: Build
-        run: cmake --build build --config Release --parallel --target Filament_VST3 Filament_Standalone filament_render_test
+        run: cmake --build build --config Release --parallel --target Filament_VST3 Filament_Standalone filament_render_test Sixteen_VST3 Sixteen_Standalone sixteen_test
 
       - name: DSP tests
         run: ctest --test-dir build -C Release --output-on-failure
@@ -35,6 +35,20 @@ jobs:
           name: Filament-Windows-x64
           path: dist/
 
+      - name: Collect Sixteen
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist-sixteen | Out-Null
+          Copy-Item -Recurse build/vocoder/Sixteen_artefacts/Release/VST3/Sixteen.vst3 dist-sixteen/
+          Copy-Item build/vocoder/Sixteen_artefacts/Release/Standalone/Sixteen.exe dist-sixteen/
+          Copy-Item vocoder/README.md dist-sixteen/
+
+      - name: Upload Sixteen
+        uses: actions/upload-artifact@v4
+        with:
+          name: Sixteen-Vocoder-Windows-x64
+          path: dist-sixteen/
+
   dsp-tests:
     name: DSP tests + demo audio (Linux)
     runs-on: ubuntu-latest
@@ -52,3 +66,9 @@ jobs:
         with:
           name: Filament-demo-audio
           path: build/demo_*.wav
+
+      - name: Upload vocoder demo audio
+        uses: actions/upload-artifact@v4
+        with:
+          name: Sixteen-demo-audio
+          path: build/vocoder_demo_*.wav

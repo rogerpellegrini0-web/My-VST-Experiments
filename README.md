@@ -1,3 +1,10 @@
+# My VST Experiments
+
+| Plugin | What it is |
+|---|---|
+| **Filament** (below) | Polyphonic waveguide physical-modelling synth |
+| **[Sixteen](vocoder/README.md)** | Circuit model of the classic 16-channel analog vocoder (Bode / Moog), with a side-chain carrier input and a patchable front panel |
+
 # Filament: waveguide physical modeling synth
 
 Filament is a polyphonic VST3 instrument that builds its sounds from digital waveguides.
