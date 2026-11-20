@@ -27,8 +27,15 @@ place of the original maker's logo, since that logo is a registered trademark.
 4. Set the two **LEVEL** knobs so the **OVERLOAD** lamps just flicker on peaks, as the original
    manual recommends. The vocoder is calibrated to sound best near overload.
 
-The small text under the PROGRAM and CARRIER jacks shows where each signal comes from. If it says
-*(no side-chain)*, nothing is reaching the side-chain input.
+A vocoder is silent without a voice: the carrier only sounds where the voice has energy. If no
+voice reaches the plugin, a red **NO VOICE** banner appears across the panel and tells you what to
+check. The usual causes are:
+
+- **The side-chain isn't activated** in the plugin window header.
+- **The send on the vocal track isn't on, or its level is at −∞.**
+- **The send points at a different destination.** It should go to *Sixteen – Side-Chain*.
+
+The small text under the PROGRAM and CARRIER jacks also shows where each signal comes from.
 
 If you'd rather insert it on the **vocal** track and side-chain the synth, open
 **PATCHES & SETUP → Inputs** and choose *Program = main input, Carrier = side-chain*.
@@ -38,7 +45,7 @@ If you'd rather insert it on the **vocal** track and side-chain the synth, open
 | Control | What it does |
 |---|---|
 | **MIC / LINE** | MIC adds 20 dB of gain to the program input (for quiet sources) |
-| **PROGRAM LEVEL**, **CARRIER LEVEL** | Input gain (5 = unity, 10 = +12 dB). Overload lamps at the clip threshold; the preamps saturate softly about 4 dB above it, as on the hardware |
+| **PROGRAM LEVEL**, **CARRIER LEVEL** | Input gain, 4.8 dB per division (5 = unity, 10 = +24 dB). The OVERLOAD lamps light fully at the clip threshold, and the preamps saturate softly about 4 dB above it, as on the hardware. Below the threshold the lamps glow faintly with the input level, so you can see that signal is arriving |
 | **SAMPLE / HOLD** | IN freezes the 16 control voltages, so a vowel sustains for as long as you like. Your MIDI sustain pedal (CC64) works as the foot switch, if you route MIDI to the plugin |
 | **EXTERNAL PATCH** | IN: the patch cords decide which analyzer band controls which synthesizer band. OUT: the normal 1:1 connection (cords stay plugged in but are ignored, as on the hardware) |
 | **Patch cords** | Drag from an *analyzer output* jack to a *synthesizer input* jack. Drag a plug away to remove it. You can also drag from an empty synthesizer input up to an analyzer output |

@@ -52,7 +52,8 @@ public:
     // Lamps, written by the audio thread
     struct Lamps
     {
-        std::atomic<float> programPeak { 0 }, carrierPeak { 0 }, hiss { 0 }, buzz { 0 };
+        std::atomic<float> programPeak { 0 }, carrierPeak { 0 }, hiss { 0 }, buzz { 0 };   // after the preamps
+        std::atomic<float> programInput { 0 }, carrierInput { 0 };                          // raw input peaks
         std::atomic<bool>  footHold { false };
         std::atomic<bool>  sideChainConnected { false };
     } lamps;

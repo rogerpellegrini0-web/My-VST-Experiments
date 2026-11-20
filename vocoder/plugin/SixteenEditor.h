@@ -91,6 +91,9 @@ private:
 
     // lamp brightness 0..1
     float lProgOver = 0, lCarOver = 0, lHiss = 0, lBuzz = 0;
+    float programSilentSeconds = 0;   // how long the program input has been silent
+    float carrierSeenSeconds = 0;     // time since the carrier last had signal
+    juce::String warning;             // shown across the panel when the voice isn't arriving
 
     struct JackHit { int row = -1, index = -1; bool valid() const { return row >= 0; } };
     JackHit hitJack (juce::Point<float>) const;

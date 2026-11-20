@@ -60,3 +60,12 @@ if(SIXTEEN_BUILD_SCREENSHOT AND TARGET juce::juce_audio_utils)
     target_compile_definitions(sixteen_screenshot PRIVATE JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JucePlugin_Name="Sixteen")
     target_link_libraries(sixteen_screenshot PRIVATE sixteen_dsp juce::juce_audio_utils)
 endif()
+
+# Developer tool: load the built VST3 through JUCE's hosting code and run audio through it
+option(SIXTEEN_BUILD_HOST_TEST "Build the VST3 host test" OFF)
+if(SIXTEEN_BUILD_HOST_TEST AND TARGET juce::juce_audio_utils)
+    juce_add_console_app(sixteen_host_test PRODUCT_NAME "sixteen_host_test")
+    target_sources(sixteen_host_test PRIVATE tools/host_test.cpp)
+    target_compile_definitions(sixteen_host_test PRIVATE JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_PLUGINHOST_VST3=1)
+    target_link_libraries(sixteen_host_test PRIVATE juce::juce_audio_processors juce::juce_gui_basics)
+endif()

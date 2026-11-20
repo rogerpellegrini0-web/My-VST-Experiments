@@ -528,6 +528,18 @@ void Panel::paintOverChildren (Graphics& g)
     }
     if (dragging && dragSource >= 0)
         drawCable (g, jackPos (0, dragSource), dragPos, cableColour (dragSource), true, true);
+
+    if (warning.isNotEmpty())
+    {
+        const Rectangle<float> box (150, 136, 1000, 30);
+        g.setColour (Colour (0xe0400c08));
+        g.fillRoundedRectangle (box, 4);
+        g.setColour (Colour (0xffff8a60));
+        g.drawRoundedRectangle (box, 4, 1.5f);
+        g.setColour (Colours::white);
+        g.setFont (panelFont (11.0f));
+        g.drawFittedText (warning, box.reduced (10, 2).toNearestInt(), Justification::centred, 2);
+    }
 }
 
 Panel::JackHit Panel::hitJack (Point<float> p) const
@@ -664,8 +676,32 @@ void Panel::updateLamps()
 {
     auto take = [] (std::atomic<float>& a) { return a.exchange (0.0f); };
     const float decay = 0.75f;
-    lProgOver = std::max (take (proc.lamps.programPeak) >= 1.0f ? 1.0f : 0.0f, lProgOver * decay);
-    lCarOver  = std::max (take (proc.lamps.carrierPeak) >= 1.0f ? 1.0f : 0.0f, lCarOver * decay);
+    // OVERLOAD lamps: full brightness at the overload threshold; below it they glow faintly
+    // with the signal level (-40 dB .. 0 dB), so you can see that signal is arriving.
+    auto lampLevel = [] (float peak)
+    {
+        if (peak >= 1.0f) return 1.0f;
+        if (peak <= 0.0f) return 0.0f;
+        return 0.22f * jlimit (0.0f, 1.0f, (20.0f * std::log10 (peak) + 40.0f) / 40.0f);
+    };
+    lProgOver = std::max (lampLevel (take (proc.lamps.programPeak)), lProgOver * decay);
+    lCarOver  = std::max (lampLevel (take (proc.lamps.carrierPeak)), lCarOver * decay);
+
+    // Diagnose the commonest set-up problem: no voice reaching the program input.
+    const float dt = 1.0f / 30.0f;
+    const float progIn = take (proc.lamps.programInput), carIn = take (proc.lamps.carrierInput);
+    programSilentSeconds = progIn > 1.0e-4f ? 0.0f : programSilentSeconds + dt;
+    carrierSeenSeconds   = carIn > 1.0e-4f ? 0.0f : carrierSeenSeconds + dt;
+    const bool programOnMain = proc.apvts.getRawParameterValue ("routing")->load() > 0.5f;
+    String w;
+    if (! programOnMain && ! proc.lamps.sideChainConnected.load())
+        w = "NO VOICE: the side-chain input is not active. Click the side-chain button in the plug-in window header, "
+            "then send your vocal track to \"Sixteen - Side-Chain\".";
+    else if (programSilentSeconds > 1.5f && carrierSeenSeconds < 0.5f)
+        w = programOnMain ? "NO VOICE: the main input (program) is silent."
+                          : "NO VOICE: the side-chain is active but silent. Check the vocal track's send or routing to "
+                            "\"Sixteen - Side-Chain\" (and that the send is on and turned up). A vocoder is silent without a voice.";
+    if (w != warning) { warning = w; repaint(); }
     lHiss = std::max (take (proc.lamps.hiss), lHiss * decay);
     lBuzz = std::max (take (proc.lamps.buzz), lBuzz * decay);
     repaint (110, 10, kWidth - 110, 130);   // top row lamps

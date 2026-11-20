@@ -16,8 +16,11 @@ void Engine::Band::reset()
 
 double Engine::levelKnobGain (float knob)
 {
-    const double k = std::clamp ((double) knob, 0.0, 10.0) / 10.0;
-    return 4.0 * k * k;
+    // 4.8 dB per division: 5 = unity, 10 = +24 dB, 1 = -19 dB, fading to off below 0.5.
+    // (Digital levels sit well below the hardware's 0 dBm line level, hence the extra gain.)
+    const double k = std::clamp ((double) knob, 0.0, 10.0);
+    const double g = std::pow (10.0, (std::max (k, 0.5) - 5.0) * 4.8 / 20.0);
+    return k < 0.5 ? g * k / 0.5 : g;
 }
 
 double Engine::preampClip (double x)

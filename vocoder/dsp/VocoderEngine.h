@@ -73,7 +73,7 @@ public:
     static constexpr double kOutputGain     = 1.0 + 84.5 / 20.0;   // output amp A308 (R367/R366); bypass stays at unity
     static constexpr double kComparatorRef  = 0.02;    // envelope difference (V) that swings the comparator rail to rail in 1 ms
     static constexpr double kComparatorBias = 0.0005;  // offset trim, leaning towards BUZZ
-    static double levelKnobGain (float knob0to10);    // audio-taper level pot (5 = unity, 10 = +12 dB)
+    static double levelKnobGain (float knob0to10);    // level pot: 5 = unity, 10 = +24 dB
     static double preampClip (double x);              // op-amp output stage, 4 dB above the LED threshold
 
 private:

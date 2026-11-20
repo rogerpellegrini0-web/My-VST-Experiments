@@ -50,6 +50,8 @@ int main (int argc, char** argv)
         sixteen->apvts.getParameter ("externalPatch")->setValueNotifyingHost (1.0f);
         sixteen->lamps.buzz = 1.0f;
         sixteen->lamps.programPeak = 1.2f;
+        sixteen->lamps.carrierPeak = 0.3f;
+        sixteen->lamps.sideChainConnected = true;
     }
     std::unique_ptr<juce::AudioProcessorEditor> ed (proc->createEditor());
     const float scale = argc > 2 ? juce::String (argv[2]).getFloatValue() : 1.0f;

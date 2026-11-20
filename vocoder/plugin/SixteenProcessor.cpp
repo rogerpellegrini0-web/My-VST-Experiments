@@ -152,6 +152,13 @@ void SixteenProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mid
     else
         std::fill (sideDst, sideDst + n, 0.0f);
 
+    {
+        auto peakOf = [n] (const std::vector<float>& v) { auto r = juce::FloatVectorOperations::findMinAndMax (v.data(), n); return std::max (-r.getStart(), r.getEnd()); };
+        const float pIn = peakOf (programBuf), cIn = peakOf (carrierBuf);
+        if (pIn > lamps.programInput.load()) lamps.programInput = pIn;
+        if (cIn > lamps.carrierInput.load()) lamps.carrierInput = cIn;
+    }
+
     engine.process (programBuf.data(), carrierBuf.data(), outBuf.data(), n, readParams());
 
     auto out = getBusBuffer (buffer, false, 0);
