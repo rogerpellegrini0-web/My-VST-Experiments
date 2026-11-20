@@ -37,6 +37,7 @@ struct Params
     Mode  mode         = Mode::HissAndBuzz;
     bool  vocoderOn    = true;    // STATUS: IN = vocoder, OUT = program passes straight through
     bool  preFilter    = true;    // 259 Hz analyzer pre-filter fitted (units above S/N 108)
+    float outputDb     = 0.0f;    // output trim (not on the original panel)
 
     // Patch cords: synthesizer input j is driven by analyzer output patch[j] (0..15),
     // or nothing (-1). Only used when externalPatch is on.
@@ -70,10 +71,11 @@ public:
     // Calibration constants (public for the tests)
     static constexpr double kVcaGainPerVolt = 4.45;   // OTA transconductance x R221, per volt of CV
     static constexpr double kNoiseRms       = 0.35;   // noise source level at the balance control
-    static constexpr double kOutputGain     = 1.0 + 84.5 / 20.0;   // output amp A308 (R367/R366); bypass stays at unity
+    static constexpr double kNominalGain    = 3.98107;  // level knob at 5 (+12 dB)
+    static constexpr double kOutputGain     = 0.75;     // vocoded path, calibrated: nominal inputs -> output peaks near the input peaks
     static constexpr double kComparatorRef  = 0.02;    // envelope difference (V) that swings the comparator rail to rail in 1 ms
-    static constexpr double kComparatorBias = 0.0005;  // offset trim, leaning towards BUZZ
-    static double levelKnobGain (float knob0to10);    // level pot: 5 = unity, 10 = +24 dB
+    static constexpr double kComparatorBias = 0.0002;  // offset trim, leaning towards BUZZ
+    static double levelKnobGain (float knob0to10);    // level pot: 5 = +12 dB (nominal), 10 = +30 dB
     static double preampClip (double x);              // op-amp output stage, 4 dB above the LED threshold
 
 private:
@@ -107,7 +109,7 @@ private:
     OnePole dcProgram, dcCarrier;
 
     // smoothed switch/knob positions (avoid zipper noise and clicks)
-    double sProgGain = 0, sCarGain = 0, sNoiseGain = 1, sBuzzGain = 1, sStatus = 1, sPower = 1;
+    double sProgGain = 0, sCarGain = 0, sNoiseGain = 1, sBuzzGain = 1, sStatus = 1, sPower = 1, sOutGain = 1;
     double smoothCoef = 0;
 
     Indicators ind;

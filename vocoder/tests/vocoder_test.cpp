@@ -73,7 +73,7 @@ struct Reson
 };
 
 // A crude formant-synthesised "voice": vowels a-e-i-o-u with "s" sounds between them.
-static std::vector<float> makeVoice (double fs, double seconds, double level = 0.25)
+static std::vector<float> makeVoice (double fs, double seconds, double level = 0.09)  // peaks at -12 dBFS
 {
     struct Vowel { double f1, f2, f3; };
     const Vowel vowels[] = { { 730, 1090, 2440 }, { 530, 1840, 2480 }, { 270, 2290, 3010 }, { 570, 840, 2410 }, { 300, 870, 2240 } };
@@ -114,7 +114,7 @@ static std::vector<float> makeVoice (double fs, double seconds, double level = 0
 
 // Narrow pulse wave (10 % duty) - the carrier recommended in the Bode instructions -
 // playing a chord, or a sawtooth.
-static std::vector<float> makeCarrier (double fs, double seconds, bool saw, double level = 0.5)
+static std::vector<float> makeCarrier (double fs, double seconds, bool saw, double level = 0.25)
 {
     const double notes[] = { 110.0, 138.6, 164.8, 220.0 };
     std::vector<float> out ((size_t) (seconds * fs));
@@ -304,7 +304,13 @@ int main (int argc, char** argv)
         for (float v : out) { finite &= std::isfinite (v); peak = std::max (peak, std::abs (v)); }
         std::printf ("fs %6.0f: voice rms %.3f, carrier rms %.3f -> vocoder rms %.3f, peak %.3f\n", fs, rms (voice), rms (carrier), rms (out), peak);
         CHECK (finite, "non-finite output at %.0f", fs);
-        CHECK (rms (out) > 0.08 && peak < 2.0, "vocoder output level rms %.3f peak %.3f at fs %.0f", rms (out), peak, fs);
+        // At DAW levels (voice peaking at -12 dBFS) with the knobs at their defaults, the
+        // output should come out at roughly the voice's own level, without spikes.
+        const double relDb = 20 * std::log10 (rms (out) / rms (voice));
+        const double crestDb = 20 * std::log10 (peak / rms (out));
+        std::printf ("          output %.1f dB relative to the voice, crest factor %.1f dB\n", relDb, crestDb);
+        CHECK (relDb > -6 && relDb < 6, "vocoder output %.1f dB relative to the voice at fs %.0f", relDb, fs);
+        CHECK (crestDb < 20, "output crest factor %.1f dB (spikes?)", crestDb);
 
         // silence in -> silence out
         Engine e2; e2.prepare (fs);

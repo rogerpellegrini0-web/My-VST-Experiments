@@ -16,10 +16,11 @@ void Engine::Band::reset()
 
 double Engine::levelKnobGain (float knob)
 {
-    // 4.8 dB per division: 5 = unity, 10 = +24 dB, 1 = -19 dB, fading to off below 0.5.
-    // (Digital levels sit well below the hardware's 0 dBm line level, hence the extra gain.)
+    // 3.6 dB per division: 5 = +12 dB, 10 = +30 dB, 1 = -2.4 dB, fading to off below 0.5.
+    // A track peaking at -12 dBFS (about 0 VU in a DAW) just lights the OVERLOAD lamp at 5,
+    // which is where the manual says the vocoder works best.
     const double k = std::clamp ((double) knob, 0.0, 10.0);
-    const double g = std::pow (10.0, (std::max (k, 0.5) - 5.0) * 4.8 / 20.0);
+    const double g = std::pow (10.0, ((std::max (k, 0.5) - 5.0) * 3.6 + 12.0) / 20.0);
     return k < 0.5 ? g * k / 0.5 : g;
 }
 
@@ -125,6 +126,7 @@ void Engine::process (const float* program, const float* carrier, float* out, in
 {
     const double progGainTarget = levelKnobGain (p.programLevel) * (p.micInput ? 10.0 : 1.0);
     const double carGainTarget  = levelKnobGain (p.carrierLevel);
+    const double outGainTarget  = std::pow (10.0, std::clamp ((double) p.outputDb, -36.0, 24.0) / 20.0);
 
     // BALANCE: the pot sits between the noise (HISS) gate and the carrier (BUZZ) gate.
     const double t = (std::clamp ((double) p.balance, -5.0, 5.0) + 5.0) / 10.0;  // 0 = HISS end
@@ -151,6 +153,7 @@ void Engine::process (const float* program, const float* carrier, float* out, in
         sBuzzGain  += (buzzGainTarget - sBuzzGain) * smoothCoef;
         sStatus    += ((p.vocoderOn ? 1.0 : 0.0) - sStatus) * smoothCoef;
         sPower     += ((p.power ? 1.0 : 0.0) - sPower) * smoothCoef;
+        sOutGain   += (outGainTarget - sOutGain) * smoothCoef;
 
         // ---- input preamps
         const double progIn = dcProgram.process (program[n]);
@@ -209,8 +212,10 @@ void Engine::process (const float* program, const float* carrier, float* out, in
         // ---- 5080-15000 Hz channel
         const double hf = hfLowpass.process (hfHighpass.process (prog) * gateGain (hfGate));
 
-        const double vocoder = (vocoded + hf) * kOutputGain;
-        const double y = (vocoder * sStatus + prog * (1.0 - sStatus)) * sPower;
+        // The HF channel and the bypass carry the program at its own level (referred back to
+        // the input), so "s" sounds keep their natural balance against the vocoded vowels.
+        const double vocoder = vocoded * kOutputGain + hf / kNominalGain;
+        const double y = (vocoder * sStatus + prog / kNominalGain * (1.0 - sStatus)) * sPower * sOutGain;
         out[n] = (float) y;
     }
 

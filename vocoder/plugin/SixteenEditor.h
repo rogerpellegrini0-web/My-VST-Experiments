@@ -85,7 +85,7 @@ public:
 private:
     SixteenProcessor& proc;
 
-    Knob programLevel, carrierLevel, balance;
+    Knob programLevel, carrierLevel, balance, output;
     ModeSelector mode;
     Toggle mic, sampleHold, externalPatch, hfDirect, status, power;
 

@@ -22,6 +22,7 @@ SixteenProcessor::SixteenProcessor()
     raw.mode = get ("mode");
     raw.status = get ("status");
     raw.preFilter = get ("preFilter");
+    raw.output = get ("output");
     raw.routing = get ("routing");
     for (int j = 0; j < kNumChannels; ++j)
         raw.patch[(size_t) j] = apvts.getRawParameterValue (patchId (j));
@@ -48,6 +49,8 @@ juce::AudioProcessorValueTreeState::ParameterLayout SixteenProcessor::createLayo
                                                   })));
     l.add (std::make_unique<AudioParameterChoice> (ParameterID { "mode", 1 }, "Mode", StringArray { "Hiss", "Hiss & Buzz", "Buzz" }, 1));
     l.add (std::make_unique<AudioParameterBool> (ParameterID { "status", 1 }, "Status (Vocoder)", true, onOff ("Out", "In")));
+    l.add (std::make_unique<AudioParameterFloat> (ParameterID { "output", 1 }, "Output", NormalisableRange<float> (-24.0f, 24.0f), 0.0f,
+                                                  AudioParameterFloatAttributes().withLabel ("dB")));
     l.add (std::make_unique<AudioParameterBool> (ParameterID { "preFilter", 1 }, "259 Hz Pre-Filter", true, onOff ("Off", "On")));
     l.add (std::make_unique<AudioParameterChoice> (ParameterID { "routing", 1 }, "Inputs",
                                                    StringArray { "Carrier = Main, Program = Side-chain", "Program = Main, Carrier = Side-chain" }, 0));
@@ -103,6 +106,7 @@ vocoder::Params SixteenProcessor::readParams() const
     p.mode = (Mode) juce::jlimit (0, 2, (int) std::lround (raw.mode->load()));
     p.vocoderOn = raw.status->load() > 0.5f;
     p.preFilter = raw.preFilter->load() > 0.5f;
+    p.outputDb = raw.output->load();
     for (int j = 0; j < kNumChannels; ++j)
         p.patch[(size_t) j] = (int) std::lround (raw.patch[(size_t) j]->load()) - 1;
     return p;

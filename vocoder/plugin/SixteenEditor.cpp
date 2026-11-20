@@ -310,7 +310,7 @@ static RangedAudioParameter& P (SixteenProcessor& p, const char* id) { return *p
 
 Panel::Panel (SixteenProcessor& p)
     : proc (p),
-      programLevel (P (p, "programLevel")), carrierLevel (P (p, "carrierLevel")), balance (P (p, "balance")),
+      programLevel (P (p, "programLevel")), carrierLevel (P (p, "carrierLevel")), balance (P (p, "balance")), output (P (p, "output")),
       mode (P (p, "mode")),
       mic (P (p, "mic"), Toggle::Style::RockerVertical),
       sampleHold (P (p, "sampleHold"), Toggle::Style::Paddle),
@@ -320,7 +320,7 @@ Panel::Panel (SixteenProcessor& p)
       power (P (p, "power"), Toggle::Style::Power)
 {
     setSize (kWidth, kHeight);
-    for (Component* c : std::initializer_list<Component*> { &programLevel, &carrierLevel, &balance, &mode, &mic, &sampleHold,
+    for (Component* c : std::initializer_list<Component*> { &programLevel, &carrierLevel, &balance, &output, &mode, &mic, &sampleHold,
                                                             &externalPatch, &hfDirect, &status, &power })
         addAndMakeVisible (c);
 
@@ -334,6 +334,7 @@ Panel::Panel (SixteenProcessor& p)
     status.setBounds (951, 345, 36, 50);
     hfDirect.setBounds (549, 354, 38, 30);
     power.setBounds (40, 222, 34, 62);
+    output.setBounds (39, 318, 38, 38);
 }
 
 Point<float> Panel::jackPos (int row, int index)
@@ -358,6 +359,10 @@ void Panel::paint (Graphics& g)
     g.fillRect (110.0f, 10.0f, 2.0f, H - 20);
     text (g, "POWER", 57, 160, 12);
     drawLed (g, { 57, 190 }, Colour (0xff35ff4a), proc.apvts.getRawParameterValue ("power")->load() > 0.5f ? 1.0f : 0.0f);
+
+    // output trim (a plug-in addition, not on the original panel)
+    knobScale (g, { 58, 337 }, 30, { "-", "", "", "", "", "0", "", "", "", "", "+" }, 10.0f);
+    text (g, "OUTPUT", 57, 372, 10);
 
     // setup button (patch presets, input routing)
     g.setColour (Colour (0xff2a2a2b));
