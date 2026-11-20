@@ -38,6 +38,7 @@ struct Params
     bool  vocoderOn    = true;    // STATUS: IN = vocoder, OUT = program passes straight through
     bool  preFilter    = true;    // 259 Hz analyzer pre-filter fitted (units above S/N 108)
     float outputDb     = 0.0f;    // output trim (not on the original panel)
+    float hfLevelDb    = 0.0f;    // 5080-15000 Hz channel level (the internal R473 trimmer); <= -24 = off
 
     // Patch cords: synthesizer input j is driven by analyzer output patch[j] (0..15),
     // or nothing (-1). Only used when externalPatch is on.
@@ -109,7 +110,7 @@ private:
     OnePole dcProgram, dcCarrier;
 
     // smoothed switch/knob positions (avoid zipper noise and clicks)
-    double sProgGain = 0, sCarGain = 0, sNoiseGain = 1, sBuzzGain = 1, sStatus = 1, sPower = 1, sOutGain = 1;
+    double sProgGain = 0, sCarGain = 0, sNoiseGain = 1, sBuzzGain = 1, sStatus = 1, sPower = 1, sOutGain = 1, sHfGain = 1;
     double smoothCoef = 0;
 
     Indicators ind;

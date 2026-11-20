@@ -47,6 +47,7 @@ If you'd rather insert it on the **vocal** track and side-chain the synth, open
 | **MIC / LINE** | MIC adds 20 dB of gain to the program input (for quiet sources) |
 | **PROGRAM LEVEL**, **CARRIER LEVEL** | Input gain, 3.6 dB per division: 5 = +12 dB, so a track peaking around −12 dBFS just lights the OVERLOAD lamp, which is where the vocoder works best. 10 = +30 dB for quiet tracks. The preamps saturate softly about 4 dB above the lamp threshold, as on the hardware. Below the threshold the lamps glow faintly with the input level |
 | **OUTPUT** | Output trim, ±24 dB. This isn't on the original panel. Like the hardware, the vocoded level follows voice level × carrier level, so 6 dB less on both inputs gives about 12 dB less output. Set the inputs with the lamps first, then use OUTPUT |
+| **HF LEVEL** | Level of the 5080–15000 Hz channel (on the original this was an internal trimmer). 0 = as designed; fully left = off. Turn it down if you get feedback, see below |
 | **SAMPLE / HOLD** | IN freezes the 16 control voltages, so a vowel sustains for as long as you like. Your MIDI sustain pedal (CC64) works as the foot switch, if you route MIDI to the plugin |
 | **EXTERNAL PATCH** | IN: the patch cords decide which analyzer band controls which synthesizer band. OUT: the normal 1:1 connection (cords stay plugged in but are ignored, as on the hardware) |
 | **Patch cords** | Drag from an *analyzer output* jack to a *synthesizer input* jack. Drag a plug away to remove it. You can also drag from an empty synthesizer input up to an analyzer output |
@@ -71,6 +72,18 @@ These are the cross-patches from the original manuals. Selecting one also sets E
 | Single / Double Cluster X | Bode patch sheet 1 | Speech scrambling "close to an instrumental sound" |
 | Single / Double Cluster Inverter | Bode patch sheet 2 | Mirrors the spectrum |
 | Straight (1:1), No Cords | | Starting points for your own patches |
+
+## Feedback with a live mic and speakers
+
+The 5080–15000 Hz channel sends the mic's high end straight to the output, 4 dB louder than it
+came in (a gain of 1.59, as on the hardware). With a live mic near the speakers that's a classic
+feedback path. It's worst in **HISS** mode, because there the channel is always open and the hiss
+coming back from the speakers keeps the discriminator in HISS.
+
+- Turn **HF LEVEL** down. In the test suite, −6 dB stops feedback with twice the speaker
+  pickup that triggers it at 0 dB, and −12 dB handles more.
+- Monitor on headphones while you record, or keep the mic away from and behind the speakers.
+- Lower the OUTPUT knob or the monitor volume.
 
 ## What's modelled, and how
 

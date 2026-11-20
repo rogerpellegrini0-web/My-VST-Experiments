@@ -127,6 +127,7 @@ void Engine::process (const float* program, const float* carrier, float* out, in
     const double progGainTarget = levelKnobGain (p.programLevel) * (p.micInput ? 10.0 : 1.0);
     const double carGainTarget  = levelKnobGain (p.carrierLevel);
     const double outGainTarget  = std::pow (10.0, std::clamp ((double) p.outputDb, -36.0, 24.0) / 20.0);
+    const double hfGainTarget   = p.hfLevelDb <= -23.9f ? 0.0 : std::pow (10.0, std::clamp ((double) p.hfLevelDb, -24.0, 12.0) / 20.0);
 
     // BALANCE: the pot sits between the noise (HISS) gate and the carrier (BUZZ) gate.
     const double t = (std::clamp ((double) p.balance, -5.0, 5.0) + 5.0) / 10.0;  // 0 = HISS end
@@ -154,6 +155,7 @@ void Engine::process (const float* program, const float* carrier, float* out, in
         sStatus    += ((p.vocoderOn ? 1.0 : 0.0) - sStatus) * smoothCoef;
         sPower     += ((p.power ? 1.0 : 0.0) - sPower) * smoothCoef;
         sOutGain   += (outGainTarget - sOutGain) * smoothCoef;
+        sHfGain    += (hfGainTarget - sHfGain) * smoothCoef;
 
         // ---- input preamps
         const double progIn = dcProgram.process (program[n]);
@@ -210,7 +212,7 @@ void Engine::process (const float* program, const float* carrier, float* out, in
         }
 
         // ---- 5080-15000 Hz channel
-        const double hf = hfLowpass.process (hfHighpass.process (prog) * gateGain (hfGate));
+        const double hf = hfLowpass.process (hfHighpass.process (prog) * gateGain (hfGate)) * sHfGain;
 
         // The HF channel and the bypass carry the program at its own level (referred back to
         // the input), so "s" sounds keep their natural balance against the vocoded vowels.

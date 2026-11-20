@@ -7,7 +7,7 @@ namespace sixteen
 {
 // A control bound to one plugin parameter (host automation and undo handled by
 // juce::ParameterAttachment).
-class ParamControl : public juce::Component
+class ParamControl : public juce::Component, public juce::SettableTooltipClient
 {
 public:
     ParamControl (juce::RangedAudioParameter& p);
@@ -85,7 +85,7 @@ public:
 private:
     SixteenProcessor& proc;
 
-    Knob programLevel, carrierLevel, balance, output;
+    Knob programLevel, carrierLevel, balance, output, hfLevel;
     ModeSelector mode;
     Toggle mic, sampleHold, externalPatch, hfDirect, status, power;
 

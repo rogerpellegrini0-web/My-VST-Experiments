@@ -382,6 +382,37 @@ int main (int argc, char** argv)
         CHECK (rms (none) < 1e-4, "unpatched synth inputs should be silent");
     }
 
+    // 7b. Acoustic feedback in HISS mode: the mic hears the speakers (5 ms later). The
+    // 5080-15000 Hz channel is a direct mic-to-speaker path with a gain of 1.59, so the loop
+    // runs away once the leak exceeds ~1/1.59. HF LEVEL must stop it.
+    {
+        const double fs = 48000;
+        auto voice = makeVoice (fs, 1.5);
+        voice.resize ((size_t) (3.5 * fs), 0.0f);
+        auto carrier = makeCarrier (fs, 3.5, true);
+        auto tail = [&] (double leak, float hfDb)
+        {
+            Engine e; e.prepare (fs);
+            Params p; p.mode = Mode::Hiss; p.hfDirect = true; p.hfLevelDb = hfDb;
+            const int d = 240, block = 64;
+            std::vector<float> out (voice.size(), 0.0f), mic (voice.size(), 0.0f);
+            for (size_t i = 0; i < voice.size(); i += block)
+            {
+                for (size_t n = i; n < i + block; ++n)
+                    mic[n] = voice[n] + (float) (n >= (size_t) d ? leak * out[n - d] : 0.0);
+                e.process (mic.data() + i, carrier.data() + i, out.data() + i, block, p);
+            }
+            return 20 * std::log10 (rms (out, (size_t) (3.0 * fs), out.size()) + 1e-9);
+        };
+        std::printf ("Speaker feedback in HISS mode, level 1.5 s after the voice stops:\n");
+        for (double leak : { 0.5, 1.0, 1.5 })
+            std::printf ("  leak %.1f: HF 0 dB %6.1f dB, HF -6 dB %6.1f dB, HF -12 dB %6.1f dB, HF off %6.1f dB\n",
+                         leak, tail (leak, 0), tail (leak, -6), tail (leak, -12), tail (leak, -24));
+        CHECK (tail (0.5, 0) < -80, "feedback at normal HF level with low leak");
+        CHECK (tail (1.0, -6) < -80, "HF LEVEL -6 dB should stop feedback at leak 1.0");
+        CHECK (tail (1.5, -12) < -80, "HF LEVEL -12 dB should stop feedback at leak 1.5");
+    }
+
     // 8. Demo renders (48 kHz)
     {
         const double fs = 48000;

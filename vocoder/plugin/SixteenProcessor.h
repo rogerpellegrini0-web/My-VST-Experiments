@@ -72,7 +72,7 @@ private:
         std::atomic<float>* sampleHold {}; std::atomic<float>* externalPatch {};
         std::atomic<float>* hfDirect {}; std::atomic<float>* balance {};
         std::atomic<float>* mode {}; std::atomic<float>* status {};
-        std::atomic<float>* preFilter {}; std::atomic<float>* routing {}; std::atomic<float>* output {};
+        std::atomic<float>* preFilter {}; std::atomic<float>* routing {}; std::atomic<float>* output {}; std::atomic<float>* hfLevel {};
         std::array<std::atomic<float>*, vocoder::kNumChannels> patch {};
     } raw;
 
